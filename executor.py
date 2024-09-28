@@ -2,7 +2,8 @@ import sqlite3
 from request_handler import Request_Parser
 from response_handler import Response
 import os
-
+from datetime import datetime
+DEFAULT_VERSION = 3
 
 class Executor:
     CLIENT_ID_SIZE = 16
@@ -40,6 +41,7 @@ class Executor:
                     PathName CHAR({Executor.NAME_LEN}), 
                     Verified CHAR(1));
             """
+            self.sqlite_connection.commit()
 
             # Use executescript() to execute multiple commands
             self.cursor.executescript(create_tables_command)
@@ -53,6 +55,21 @@ class Executor:
             getattr(self, func_name)(request)
         else:  # invalid code for request
             Response.send_general_error(request.sock)
+
+    def register(self, request):
+        self.cursor.execute("SELECT 1 FROM clients WHERE Name = ?", (request.body.username,))
+        result = self.cursor.fetchone()
+        if result is None:
+            uuid = generate_uuid()
+            current_time = datetime.now()
+            self.cursor.execute(
+                'INSERT INTO clients (ID, Name, PublicKey, LastSeen, AES_Key) VALUES (?, ?, ?, ?, ?)',
+                (uuid, request.body.username, "", current_time, ""))
+            self.sqlite_connection.commit()
+            resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_REGISTRATION, Response.Response_Body(uuid))
+            resp.send_response(request.socket)
+        else:
+            Response.send_general_error(request.socket, Response.REGISTRATION_FAILED)
 
     def __del__(self):
         self.sqlite_connection.close()
