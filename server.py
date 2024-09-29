@@ -1,3 +1,4 @@
+import os
 import socket
 import struct
 import selectors
@@ -7,11 +8,21 @@ from executor import Executor
 
 class Server:
     DEFAULT_VERSION = 3
-
+    DEFAULT_PORT = 1256
     def __init__(self):
         self.sel = selectors.DefaultSelector()
         self.sock = socket.socket()
-        self.sock.bind(('localhost', 1234))
+
+        port_num = self.DEFAULT_PORT
+        if os.path.exists('port.info'):
+            with open('port.info', 'r') as file:
+                try:
+                    port_num = int(file.read().strip())
+                except ValueError:
+                    pass
+        self.sock.bind(('', port_num))
+        print("server listening on port", port_num)
+
         self.sock.listen(100)
         self.sock.setblocking(False)
         self.sel.register(self.sock, selectors.EVENT_READ, self.accept)

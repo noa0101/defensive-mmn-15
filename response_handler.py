@@ -1,5 +1,7 @@
 import struct
 DEFAULT_VERSION = 3
+
+
 class Response:
     SUCCESSFUL_REGISTRATION = 1600
     REGISTRATION_FAILED = 1601
@@ -49,6 +51,6 @@ class Response:
             return super().serialize() + struct.pack(format_string, self.content_size, padded_file_name, self.cksum)
 
     @staticmethod
-    def send_general_error(socket):
-        resp = Response(DEFAULT_VERSION, Response.GENERAL_ISSUE, Response.Response_Body())
+    def send_general_error(socket, code=GENERAL_ISSUE):
+        resp = Response(DEFAULT_VERSION, code, Response.Response_Body())
         resp.send_response(socket)
