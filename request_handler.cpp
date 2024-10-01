@@ -28,6 +28,9 @@ Request::Request_Header::Request_Header(unsigned char* id, uint8_t ver, uint16_t
     payload_size = size;
 }
 
+Request::Send_Key_Request_Body::Send_Key_Request_Body(std::string name, std::string key) : Request_Body(name), public_key(key) {}
+
+
 std::string Request::Send_File_Request_Body::serialize_short_fields() {
     std::string serialized_data(sizeof(content_size) + sizeof(orig_size) + sizeof(packet_number) + sizeof(total_packets) + NAME_LEN, '\0');
     uint64_t offset = 0;
@@ -37,7 +40,9 @@ std::string Request::Send_File_Request_Body::serialize_short_fields() {
     add_int_serialization<uint16_t>(serialized_data, packet_number, offset);
     add_int_serialization<uint16_t>(serialized_data, total_packets, offset);
 
-    std::memcpy(serialized_data.data() + offset, &file_name, file_name.size());
+    std::memcpy(serialized_data.data() + offset, &name, name.size());
+
+    return serialized_data;
 }
 
 
@@ -83,7 +88,7 @@ void Request::send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned c
     req.send_request(socket);
 }
 
-Request::Request_Body::Request_Body(std::string name) : file_name(name) {}
+Request::Request_Body::Request_Body(std::string name) : name(name) {}
 
 uint32_t Request::Request_Body::get_len() {
     return NAME_LEN;
@@ -98,11 +103,11 @@ uint32_t Request::Send_File_Request_Body::get_len() {
 }
 
 void Request::Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {
-    boost::asio::write(*socket, boost::asio::buffer(file_name));
+    boost::asio::write(*socket, boost::asio::buffer(name));
 }
 
 void Request::Send_Key_Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {
-    boost::asio::write(*socket, boost::asio::buffer(file_name + key));
+    boost::asio::write(*socket, boost::asio::buffer(name + public_key));
 }
 
 void Request::Send_File_Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {

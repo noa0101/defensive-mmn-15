@@ -2,7 +2,7 @@
 
 template <typename T> T Response::readnum(std::string& messsage, uint32_t &offset) {
 	T value = 0;
-	std::memcpy(&value, message.data()+offset, sizeof(T));
+	std::memcpy(&value, messsage.data()+offset, sizeof(T));
 	value = boost::endian::little_to_native<T>(value);
 	offset += sizeof(T);
 	return value;
@@ -56,4 +56,13 @@ Response::Response(std::shared_ptr<tcp::socket>& socket) : head(socket) {
 	default:
 		body = Response_Body(message);
 	}
+}
+
+unsigned int Response::get_code() {
+	return head.code;
+}
+
+
+unsigned char* Response::get_client_id() {
+	return body.client_id;
 }
