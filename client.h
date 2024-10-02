@@ -14,6 +14,9 @@
 #include <iostream>
 #include <iomanip>
 #include <stdexcept>
+#include <cryptlib.h>
+#include <rsa.h>
+
 
 	
 using boost::asio::ip::tcp;
@@ -75,7 +78,7 @@ private:
 		std::string serialize_short_fields();
 
 	public:
-		Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string file_name, char* content);
+		Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, char* content);
 		void send_request_body(std::shared_ptr<tcp::socket>& socket) override;
 		uint32_t get_len() override;
 	};
@@ -89,9 +92,9 @@ private:
 	void send_request(std::shared_ptr<tcp::socket>& socket);
 
 public:
-	static void general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string name);
-	static void send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string name, std::string key);
-	static void send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string file_name, char *content);
+	static void general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name);
+	static void send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name, std::string& key);
+	static void send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string &file_name, char *content);
 };
 
 
@@ -108,7 +111,7 @@ public:
 	static const unsigned int RECONNECTION_FAILED = 1606;
 	static const unsigned int GENERAL_ISSUE = 1607;
 
-	static const std::map<unsigned int, std::string> CODES_MEANING = {
+	inline static const std::map<unsigned int, std::string> CODES_MEANING = {
 		{SUCCESSFULL_REGISTRATION, "Successful Registration"},
 		{REGISTRATION_FAILED, "Registration Failed"},
 		{PUBLIC_KEY_RECEIVED, "Public Key Received"},
@@ -127,6 +130,7 @@ private:
 
 		const unsigned int HEADER_SIZE = sizeof(version) + sizeof(code) + sizeof(payload_size);
 
+	public:
 		Response_Header(std::shared_ptr<tcp::socket>& socket);
 
 		friend class Response;
@@ -144,7 +148,8 @@ private:
 	public:
 		Response_Body(std::string body);
 		Response_Body();
-
+		virtual std::string get_aes_key();
+		virtual unsigned long get_cksum();
 		friend class Response;
 	};
 
@@ -153,6 +158,8 @@ private:
 
 	public:
 		Response_Body_With_Key(std::string body);
+		std::string get_aes_key();
+		friend class Response;
 	};
 
 	class Valid_CRC_Response_Body : public Response_Body {
@@ -162,9 +169,12 @@ private:
 
 	public:
 		Valid_CRC_Response_Body(std::string body);
+		unsigned long get_cksum();
+
+		friend class Response;
 	};
 
-
+	
 	Response_Header head;
 	Response_Body body;
 
@@ -173,13 +183,20 @@ protected:
 
 public:
 	Response(std::shared_ptr<tcp::socket>& socket);
-	unsigned int get_code();
 	unsigned char* get_client_id();
+	void print_response_code();
+	unsigned int get_code();
+	unsigned long get_cksum();
+	std::string get_aes_key();
 };
 
 
+
 namespace Encryption_Utils {
-	std::string GenerateRSAKeyPair();
+	std::string generate_RSA_keyPair();
+	CryptoPP::RSA::PrivateKey load_private_key(const std::string& filename);
+	std::string decrypt_AES_key(const std::string& encryptedKey);
+	char* AES_encryption(char* plaintext, std::string &key);
 }
 
 namespace Cksum {
@@ -188,6 +205,7 @@ namespace Cksum {
 
 class Client {
 	static const int VERSION = 3;
+	static const int MAX_TRIES = 3;
 	static const size_t CLIENT_ID_SIZE = 16;
 
 	std::string name;
@@ -201,8 +219,11 @@ class Client {
 	void client_register();
 	void client_reconnect();
 	void read_transfer_info();
+	void read_me_info();
 	void connect_to_port();
-	std::string read_file(std::string fname);
+	void send_public_key();
+	static char * read_file(std::string fname);
+	void send_file();
 
 public:
 	Client();

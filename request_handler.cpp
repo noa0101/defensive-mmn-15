@@ -60,14 +60,14 @@ void Request::send_request(std::shared_ptr<tcp::socket>& socket) {
     body.send_request_body(socket);
 }
 
-void Request::general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string name) {
+void Request::general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string& name) {
     Request::check_name_len(name);
     Request_Body bod(name);
     Request req(Request_Header(id, ver, code, bod.get_len()), bod);
     req.send_request(socket);
 }
 
-void Request::send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string name, std::string key) {
+void Request::send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name, std::string &key) {
     Request::check_name_len(name);
     if (key.size() != PUBLIC_KEY_SIZE)
         throw std::runtime_error("Public key should be of length " + std::to_string(PUBLIC_KEY_SIZE));
@@ -77,11 +77,11 @@ void Request::send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned ch
     req.send_request(socket);
 }
 
-Request::Send_File_Request_Body::Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string file_name, char* content) :
+Request::Send_File_Request_Body::Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string &file_name, char * content) :
     content_size(content_s), orig_size(orig_s), packet_number(pack_num),
     total_packets(tot_packs), Request_Body(file_name), message_content(content) {}
 
-void Request::send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string file_name, char *content) {
+void Request::send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, char * content) {
     Request::check_name_len(file_name);
     Request::Send_File_Request_Body bod(content_s, orig_s, pack_num, tot_packs, file_name, content);
     Request req(Request_Header(id, ver, code, bod.get_len()), bod);

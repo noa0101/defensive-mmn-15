@@ -58,11 +58,40 @@ Response::Response(std::shared_ptr<tcp::socket>& socket) : head(socket) {
 	}
 }
 
+void Response::print_response_code() {
+	std::cout << "Server responded with code" << head.code << ':' << " \"" << Response::CODES_MEANING.at(head.code) << "\"\n\n";
+}
+
 unsigned int Response::get_code() {
 	return head.code;
 }
 
+unsigned long Response::get_cksum() {
+	return body.get_cksum();
+}
 
 unsigned char* Response::get_client_id() {
 	return body.client_id;
+}
+
+std::string Response::Response_Body::get_aes_key() {
+	return "";
+}
+
+std::string Response::Response_Body_With_Key::get_aes_key() {
+	return encrypted_key;
+}
+
+std::string Response::get_aes_key() {
+	if (head.code == PUBLIC_KEY_RECEIVED || head.code == SUCCESSFULL_RECONNECTION)
+		return body.get_aes_key();
+}
+
+unsigned long Response::Response_Body::get_cksum() {
+	return 0;
+}
+
+
+unsigned long Response::Valid_CRC_Response_Body::get_cksum() {
+	return cksum;
 }
