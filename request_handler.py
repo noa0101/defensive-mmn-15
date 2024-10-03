@@ -24,8 +24,13 @@ class Request_Parser:
 
     # returns False if no text was received from the client - the connection was closed. True otherwise
     def read_request(self):
-        self.client_id = self.sock.revc(Request_Parser.CLIENT_ID_SIZE)
-        if self.client_id == '': # No message from client
+        '''
+        data = self.sock.recv(1024)
+        print(data)
+        print('len:', len(data))
+        '''
+        self.client_id = self.sock.recv(Request_Parser.CLIENT_ID_SIZE)
+        if self.client_id == '':  # No message from client
             return False
         self.version, self.code, self.payload_size = (
             struct.unpack('<BHI',

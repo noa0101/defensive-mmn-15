@@ -1,11 +1,20 @@
 #include <iostream>
 #include "client.h"
 
-Client::Client() {
+Client::Client() : active(true) {
     try {
         read_transfer_info();
         connect_to_port();
+    }
+    catch (std::exception& e) {
+        active = false;
+        std::cerr << "Fatal Error!\n" << e.what() << '\n' << "Stopping Client actievity.\n";
+    }
+}
 
+void Client::run() {
+    if (!active) return;
+    try {
         if (std::filesystem::exists("me.info")) {
             read_me_info();
             client_reconnect();
@@ -16,81 +25,105 @@ Client::Client() {
         send_file();
     }
     catch (std::exception& e) {
-        std::cerr << "Fatal error: " << e.what() << '\n' << "Stopping Client actievity.\n";
+        active = false;
+        std::cerr << "Fatal Error!\n" << e.what() << '\n' << "Stopping Client actievity.\n";
     }
 }
 
-Client::~Client() {
-    if(socket && socket->is_open())
-        socket->close();
-}
 
 void Client::client_register() {
     std::cout << "Registring client with name \"" << name << "\"\n";
-    Request::general_request(socket, uuid, Client::VERSION, Request::REGISTRATION, name);
-    Response resp = Response(socket);
-    resp.print_response_code();
 
-    if (resp.get_code() == Response::SUCCESSFULL_REGISTRATION) {
-        unsigned char * returned_user_id = resp.get_client_id();
-        std::memcpy(uuid, returned_user_id, Client::CLIENT_ID_SIZE);
+    bool success = false;
+    for (int tries = 0; !success && tries < MAX_TRIES; tries++) {
+        Request::general_request(socket, uuid, Client::VERSION, Request::REGISTRATION, name);
+        Response resp = Response(socket);
+        resp.print_response_code();
+        if (resp.get_code() == Response::SUCCESSFULL_REGISTRATION) {
+            unsigned char* returned_user_id = resp.get_client_id();
+            std::memcpy(uuid, returned_user_id, Client::CLIENT_ID_SIZE);
+        }
+        std::cout << socket->is_open() << '\n';
     }
-    else {
+    if(!success)
         throw std::runtime_error("Registration failed.");
-    }
+
     send_public_key();
+    create_me_info();
+}
 
 
-    //craete me.info
-    std::ofstream outputFile("me.info");
+void Client::create_me_info() {
+    // read private key from priv.key, where the encryption utils function saved it
     std::string priv_key;
     std::ifstream key_file("priv.key");
+    if (!key_file)
+        throw std::runtime_error("Failed to open file priv.key\n");
     getline(key_file, priv_key);
     key_file.close();
 
+    // open me.info with std::ios::trunc to clear the previous file contents if it exists
+    std::ofstream outputFile("me.info", std::ios::out | std::ios::trunc);
+    if (!outputFile)
+        throw std::runtime_error("Failed to create or open file me.info\n");
+
+    // write the necessary lines
     outputFile << name << '\n';
     outputFile << uuid << '\n';
     outputFile << priv_key << '\n';
+
+    outputFile.close();
 }
 
 
 void Client::client_reconnect() {
-    Request::general_request(socket, uuid, VERSION, Request::RECONNECTION, name);
-    Response resp = Response(socket);
-    resp.print_response_code();
-    if (resp.get_code() == Response::SUCCESSFULL_RECONNECTION) {
-        aes_key = Encryption_Utils::decrypt_AES_key(resp.get_aes_key());
+    std::cout << "Reconnecting client " << name << ".\n";
+    bool success = false;
+    for (int tries = 0; !success && tries < MAX_TRIES; tries++) {
+        Request::general_request(socket, uuid, VERSION, Request::RECONNECTION, name);
+        Response resp = Response(socket);
+        resp.print_response_code();
+        if (resp.get_code() == Response::SUCCESSFULL_RECONNECTION) {
+            aes_key = Encryption_Utils::decrypt_AES_key(resp.get_aes_key());
+            success = true;
+        }
+        else if (resp.get_code() == Response::RECONNECTION_FAILED) {
+            client_register();
+            return;
+        }
     }
-    else {
-        throw std::runtime_error("Reconnection went wrong.");
-    }
+    if(!success)
+        throw std::runtime_error("Server refused reconnection thrice.");
 }
 
 void Client::send_public_key() {
     std::cout << "Generating and sending public key to server.\n";
     std::string public_key = Encryption_Utils::generate_RSA_keyPair();
-    Request::send_key_request(socket, uuid, VERSION, Request::SEND_PUBLIC_KEY, name, public_key);
-    Response resp = Response(socket);
-    resp.print_response_code();
-    if (resp.get_code() == Response::PUBLIC_KEY_RECEIVED) {
-        aes_key = Encryption_Utils::decrypt_AES_key(resp.get_aes_key());
+    bool success = false;
+    for (int tries = 0; !success && tries < MAX_TRIES; tries++) {
+        Request::send_key_request(socket, uuid, VERSION, Request::SEND_PUBLIC_KEY, name, public_key);
+        Response resp = Response(socket);
+        resp.print_response_code();
+        if (resp.get_code() == Response::PUBLIC_KEY_RECEIVED) {
+            aes_key = Encryption_Utils::decrypt_AES_key(resp.get_aes_key());
+            success = true;
+        }
     }
-    else {
+    if(!success)
         throw std::runtime_error("Key sending went wrong.");
-    }
 }
 
 void Client::connect_to_port() {
+    std::cout << "Connecting to port " << port << ".\n";
     try {
-        boost::asio::io_context io_context;
-        tcp::socket s(io_context);
+        socket = std::make_shared<tcp::socket>(io_context);
         tcp::resolver resolver(io_context);
-        boost::asio::connect(s, resolver.resolve(ip_address, port));
-        socket = std::make_shared<tcp::socket>(s);
+        boost::asio::connect(*socket, resolver.resolve(ip_address, port));
     }
     catch (std::exception& e) {
         throw std::runtime_error("Failed to connect to port: " + std::string(e.what()));
     }
+
 }
 
 
@@ -202,7 +235,19 @@ void Client::send_file() {
     delete[] ciphertext;
 }
 
+Client::~Client() {
+    if (!socket || !socket->is_open()) return;
+    try {
+        socket->shutdown(tcp::socket::shutdown_send);
+        socket->close();
+    }
+    catch (std::exception& e) {
+        std::cerr << "Error while closing the socket: " << e.what() << std::endl;
+    }
+}
+
 
 int main() {
     Client client;
+    client.run();
 }

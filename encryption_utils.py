@@ -3,7 +3,6 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import unpad
-import base64
 
 AES_KEY_SIZE = 32
 

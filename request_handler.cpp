@@ -8,16 +8,16 @@ void Request::add_int_serialization(std::string serialization, T num, uint64_t& 
 }
 
 std::string Request::Request_Header::serialize() {
-    std::string serialized_head(sizeof(client_id) + sizeof(version) + sizeof(code) + sizeof(payload_size), '\0');
+    std::string serialized_head(CLIENT_ID_SIZE + sizeof(version) + sizeof(code) + sizeof(payload_size), '\0');
     uint64_t offset = 0;
 
-    std::memcpy(serialized_head.data() + offset, client_id, sizeof(client_id));
-    offset += sizeof(client_id);
+    std::memcpy(serialized_head.data() + offset, client_id, CLIENT_ID_SIZE);
+    offset += CLIENT_ID_SIZE;
 
     add_int_serialization<uint8_t>(serialized_head, version, offset);
     add_int_serialization<uint8_t>(serialized_head, code, offset);
     add_int_serialization<uint8_t>(serialized_head, payload_size, offset);
-    
+
     return serialized_head;
 }
 
@@ -41,7 +41,6 @@ std::string Request::Send_File_Request_Body::serialize_short_fields() {
     add_int_serialization<uint16_t>(serialized_data, total_packets, offset);
 
     std::memcpy(serialized_data.data() + offset, &name, name.size());
-
     return serialized_data;
 }
 

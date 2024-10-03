@@ -1,7 +1,6 @@
 import os
 import socket
-import struct
-import selectors
+import threading
 from request_handler import Request_Parser
 from executor import Executor
 
@@ -9,9 +8,9 @@ from executor import Executor
 class Server:
     DEFAULT_VERSION = 3
     DEFAULT_PORT = 1256
+
     def __init__(self):
-        self.sel = selectors.DefaultSelector()
-        self.sock = socket.socket()
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         port_num = self.DEFAULT_PORT
         if os.path.exists('port.info'):
@@ -20,38 +19,36 @@ class Server:
                     port_num = int(file.read().strip())
                 except ValueError:
                     pass
+
         self.sock.bind(('', port_num))
-        print("server listening on port", port_num)
+        print("Server listening on port", port_num)
 
         self.sock.listen(100)
-        self.sock.setblocking(False)
-        self.sel.register(self.sock, selectors.EVENT_READ, self.accept)
         self.executor = Executor()
 
     def run(self):
         while True:
-            events = self.sel.select()
-            for key, mask in events:
-                callback = key.data
-                callback(key.fileobj)
-
-    def accept(self):
-        conn, addr = self.sock.accept()  # Should be ready
-        print('accepted', conn, 'from', addr)
-        conn.setblocking(False)
-        self.sel.register(conn, selectors.EVENT_READ, self.handle_client)
+            conn, addr = self.sock.accept()
+            # create a new thread for each client
+            client_thread = threading.Thread(target=self.handle_client, args=(conn,))
+            client_thread.start()
 
     def handle_client(self, conn):
-        request = Request_Parser(conn)
+        print("New client connected!")
         try:
-            while request.read_request():  # while the client keeps sending requests
+            request = Request_Parser(conn)
+            while request.read_request():
                 self.executor.execute(request)
+            Server.close_connection(conn)
 
         except ConnectionResetError:
-            # Handle client disconnecting abruptly
             print('Client disconnected abruptly')
-            self.sel.unregister(conn)
-            conn.close()
+            Server.close_connection(conn)
+
+    @staticmethod
+    def close_connection(conn):
+        print('Closing connection')
+        conn.close()
 
 
 if __name__ == "__main__":

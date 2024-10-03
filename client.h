@@ -204,6 +204,7 @@ namespace Cksum {
 }
 
 class Client {
+private:
 	static const int VERSION = 3;
 	static const int MAX_TRIES = 3;
 	static const size_t CLIENT_ID_SIZE = 16;
@@ -215,6 +216,9 @@ class Client {
 	std::string ip_address;
 	std::string port;
 	std::shared_ptr<tcp::socket> socket;
+	bool active;
+	boost::asio::io_context io_context;
+
 
 	void client_register();
 	void client_reconnect();
@@ -224,8 +228,11 @@ class Client {
 	void send_public_key();
 	static char * read_file(std::string fname);
 	void send_file();
+	void create_me_info();
+
 
 public:
 	Client();
 	~Client();
+	void run();
 };
