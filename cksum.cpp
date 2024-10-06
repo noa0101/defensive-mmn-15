@@ -460,3 +460,19 @@ unsigned long Cksum::memcrc(char* b, size_t n) {
     }
     return (unsigned long)UNSIGNED(~s);
 }
+
+unsigned long Cksum::get_cksum(std::string fname) {
+    if (std::filesystem::exists(fname)) {
+        std::filesystem::path fpath = fname;
+        std::ifstream f1(fname.c_str(), std::ios::binary);
+
+        size_t size = std::filesystem::file_size(fpath);
+        char* b = new char[size];
+        f1.seekg(0, std::ios::beg);
+        f1.read(b, size);
+        f1.close();
+        delete[] b;
+        return memcrc(b, size);
+    }
+    throw std::runtime_error("Error opening file to send" + fname + '.');
+}

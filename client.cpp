@@ -42,8 +42,8 @@ void Client::client_register() {
         if (resp.get_code() == Response::SUCCESSFULL_REGISTRATION) {
             unsigned char* returned_user_id = resp.get_client_id();
             std::memcpy(uuid, returned_user_id, Client::CLIENT_ID_SIZE);
+            success = true;
         }
-        std::cout << socket->is_open() << '\n';
     }
     if(!success)
         throw std::runtime_error("Registration failed.");
@@ -99,6 +99,8 @@ void Client::client_reconnect() {
 void Client::send_public_key() {
     std::cout << "Generating and sending public key to server.\n";
     std::string public_key = Encryption_Utils::generate_RSA_keyPair();
+    std::cout << "public key size: " << public_key.size() << '\n';
+
     bool success = false;
     for (int tries = 0; !success && tries < MAX_TRIES; tries++) {
         Request::send_key_request(socket, uuid, VERSION, Request::SEND_PUBLIC_KEY, name, public_key);
@@ -170,7 +172,7 @@ void Client::read_me_info() {
 }
 
 
-char * Client::read_file(std::string fname) {
+/*char * Client::read_file(std::string fname) {
     if (std::filesystem::exists(fname)) {
         std::filesystem::path fpath = fname;
         std::ifstream f1(fname.c_str(), std::ios::binary);
@@ -184,55 +186,90 @@ char * Client::read_file(std::string fname) {
     else {
         throw std::runtime_error("Requested input file \"" + fname + "\" was not found.");
     }
-}
+}*/
 
 void Client::send_file() {
     std::cout << "Sending a file for backup.\n";
-    char* plaintext = read_file(file_to_send);
-    char* ciphertext = Encryption_Utils::AES_encryption(plaintext, aes_key);
-    unsigned long cksum = Cksum::memcrc(plaintext, strlen(plaintext));
 
-    unsigned short tries = 0;
+    std::ifstream file(file_to_send);
+    if (!file.is_open())
+        throw std::runtime_error("Error opening file to send" + file_to_send + '.');
+
+    unsigned long cksum = Cksum::get_cksum(file_to_send);
+
+    size_t file_size = file.tellg();
+    char* buffer = new char[Request::MAX_FILE_SENT_SIZE + 1]; // +1 for null terminator
+    uint16_t tot_packs = ceil((double)file_size / Request::MAX_FILE_SENT_SIZE);
+    uint16_t packet_num;
     bool validated = false;
+    int tries = 0;
 
-    while (tries <= MAX_TRIES && !validated) {
-        Request::send_file_request(socket, uuid, VERSION, Request::SEND_FILE, strlen(ciphertext), strlen(plaintext), 0, 0, file_to_send, ciphertext);
+    do {
+        packet_num = 1;
+        while (!file.eof()) {
+            file.read(buffer, Request::MAX_FILE_SENT_SIZE);
+            std::streamsize bytesRead = file.gcount(); // Get the number of bytes actually read
+            buffer[bytesRead] = '\0'; // Null terminate the buffer
+
+            if (!send_file_single_request(buffer, packet_num, tot_packs)) {
+                delete[] buffer;
+                file.close();
+                throw std::runtime_error("Server did not receive file as expected.");
+            }
+
+            packet_num++;
+        }
+
         Response resp(socket);
         resp.print_response_code();
 
-        if (resp.get_code() != Response::FILE_RECEIVED) {
-            delete[] plaintext;
-            delete[] ciphertext;
-            throw std::runtime_error("Server did not receive file as expected.");
-        }
 
-        unsigned long server_cksum = resp.get_cksum();
-        if (cksum == server_cksum) {
+
+        if (resp.get_code() == Response::FILE_RECEIVED && cksum == resp.get_cksum()) {
             Request::general_request(socket, uuid, VERSION, Request::VALID_CRC, file_to_send);
             validated = true;
             std::cout << "File received with correct cksum.\n";
             Response resp(socket);
             resp.print_response_code();
         }
+
         else {
             if (tries == MAX_TRIES) {
-                std::cout << "File received with incorrect cksum for the fourth time. Sending abortion message.\n";
+                std::cout << "File not received/received with incorrect cksum for the fourth time. Sending abortion message.\n";
                 Request::general_request(socket, uuid, VERSION, Request::FOURTH_INVALID_CRC, file_to_send);
                 Response resp(socket);
                 resp.print_response_code();
-
             }
             else {
                 Request::general_request(socket, uuid, VERSION, Request::INVALID_CRC, file_to_send);
                 std::cout << "File received with incorrect cksum.\n";
             }
         }
-        tries++;
-    }
 
-    // deallocate heap memory
-    delete[] plaintext;
+        tries++;
+
+    } while (!validated && tries < MAX_TRIES);
+
+    delete[] buffer; // Clean up the heap-allocated buffer
+    file.close();
+}
+
+//tries to send a single packet of a file. returns true is sending was successfull, false if failed thrice.
+bool Client::send_file_single_request(char *plaintext, uint16_t packet_num, uint16_t tot_packs) {
+    char* ciphertext = Encryption_Utils::AES_encryption(plaintext, aes_key);
+    for (int tries = 0; tries < MAX_TRIES; tries++) {
+        Request::send_file_request(socket, uuid, VERSION, Request::SEND_FILE, strlen(ciphertext), strlen(plaintext), packet_num, tot_packs, file_to_send, ciphertext);
+        Response resp(socket);
+        resp.print_response_code();
+
+        if (resp.get_code() == Response::FILE_RECEIVED) {
+            delete[] ciphertext;
+            return true;
+        }
+    }
+    //if this line is reached, it means the sending failed thrice
     delete[] ciphertext;
+    return false;
 }
 
 Client::~Client() {

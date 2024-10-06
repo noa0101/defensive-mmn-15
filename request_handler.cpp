@@ -1,7 +1,7 @@
 #include "client.h"
 
 template <typename T>
-void Request::add_int_serialization(std::string serialization, T num, uint64_t& offset) {
+void Request::add_int_serialization(std::string &serialization, T num, uint64_t& offset) {
     T num_le = boost::endian::native_to_little(num);
     std::memcpy(serialization.data() + offset, &num_le, sizeof(num_le));
     offset += sizeof(num_le);
@@ -13,10 +13,9 @@ std::string Request::Request_Header::serialize() {
 
     std::memcpy(serialized_head.data() + offset, client_id, CLIENT_ID_SIZE);
     offset += CLIENT_ID_SIZE;
-
     add_int_serialization<uint8_t>(serialized_head, version, offset);
-    add_int_serialization<uint8_t>(serialized_head, code, offset);
-    add_int_serialization<uint8_t>(serialized_head, payload_size, offset);
+    add_int_serialization<uint16_t>(serialized_head, code, offset);
+    add_int_serialization<uint32_t>(serialized_head, payload_size, offset);
 
     return serialized_head;
 }
@@ -28,11 +27,13 @@ Request::Request_Header::Request_Header(unsigned char* id, uint8_t ver, uint16_t
     payload_size = size;
 }
 
-Request::Send_Key_Request_Body::Send_Key_Request_Body(std::string name, std::string key) : Request_Body(name), public_key(key) {}
+Request::Send_Key_Request_Body::Send_Key_Request_Body(std::string name, std::string key) : Request_Body(name), public_key(key) {
+    std::cout << "in right constructor\n";
+}
 
 
 std::string Request::Send_File_Request_Body::serialize_short_fields() {
-    std::string serialized_data(sizeof(content_size) + sizeof(orig_size) + sizeof(packet_number) + sizeof(total_packets) + NAME_LEN, '\0');
+    std::string serialized_data(SHORT_FIESLDS_SIZE, '\0');
     uint64_t offset = 0;
 
     add_int_serialization<uint32_t>(serialized_data, content_size, offset);
@@ -50,12 +51,13 @@ Request::Request(Request_Header head, Request_Body body) :
 
 
 void Request::check_name_len(std::string file_name) {
-    if (file_name.size() > NAME_LEN)
+    if (file_name.size() >= NAME_LEN) //cannot be 255, as room m ust be left for the null terminator
         throw std::runtime_error("Given name is too long, request cannot be generated!");
 }
 
 void Request::send_request(std::shared_ptr<tcp::socket>& socket) {
     boost::asio::write(*socket, boost::asio::buffer(head.serialize()));
+    std::cout << "sending reauest body\n";
     body.send_request_body(socket);
 }
 
@@ -67,10 +69,12 @@ void Request::general_request(std::shared_ptr<tcp::socket>& socket, unsigned cha
 }
 
 void Request::send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name, std::string &key) {
+    std::cout << "in send key raequest\n";
     Request::check_name_len(name);
     if (key.size() != PUBLIC_KEY_SIZE)
         throw std::runtime_error("Public key should be of length " + std::to_string(PUBLIC_KEY_SIZE));
-    
+    std::cout << "public key size: " << key.size() << '\n';
+
     Send_Key_Request_Body bod(name, key);
     Request req(Request_Header(id, ver, code, bod.get_len()), bod);
     req.send_request(socket);
@@ -89,6 +93,7 @@ void Request::send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned c
 
 Request::Request_Body::Request_Body(std::string name) : name(name) {}
 
+
 uint32_t Request::Request_Body::get_len() {
     return NAME_LEN;
 }
@@ -102,11 +107,16 @@ uint32_t Request::Send_File_Request_Body::get_len() {
 }
 
 void Request::Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {
-    boost::asio::write(*socket, boost::asio::buffer(name));
+    std::cout << "in wrong send request body\n";
+    std::string padding(NAME_LEN - name.size(), '\0');
+    boost::asio::write(*socket, boost::asio::buffer(name+padding));
+    //boost::asio::write(*socket, boost::asio::buffer(padding));
 }
 
 void Request::Send_Key_Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {
-    boost::asio::write(*socket, boost::asio::buffer(name + public_key));
+    std::cout << "in right send request body\n";
+    std::string padding(NAME_LEN - name.size(), '\0');
+    boost::asio::write(*socket, boost::asio::buffer(name + padding + public_key));
 }
 
 void Request::Send_File_Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {

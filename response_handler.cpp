@@ -59,7 +59,9 @@ Response::Response(std::shared_ptr<tcp::socket>& socket) : head(socket) {
 }
 
 void Response::print_response_code() {
+	std::cout << "----------------------------------------------------------------\n";
 	std::cout << "Server responded with code " << head.code << ':' << " \"" << Response::CODES_MEANING.at(head.code) << "\"\n";
+	std::cout << "----------------------------------------------------------------\n\n";
 }
 
 unsigned int Response::get_code() {

@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <map>
+#include <math.h>
 #include <sstream>
 #include <iostream>
 #include <iomanip>
@@ -36,7 +37,7 @@ private:
 	static const size_t NAME_LEN = 255;
 	static const size_t PUBLIC_KEY_SIZE = 160;
 
-	template <typename T> static void add_int_serialization(std::string, T, uint64_t&);
+	template <typename T> static void add_int_serialization(std::string&, T, uint64_t&);
 
 	class Request_Header {
 		unsigned char client_id[CLIENT_ID_SIZE];
@@ -64,7 +65,7 @@ private:
 
 	public:
 		Send_Key_Request_Body(std::string name, std::string key);
-		void send_request_body(std::shared_ptr<tcp::socket>& socket) override;
+		void  send_request_body(std::shared_ptr<tcp::socket>& socket) override;
 		uint32_t get_len() override;
 	};
 
@@ -78,6 +79,7 @@ private:
 		std::string serialize_short_fields();
 
 	public:
+		static const size_t SHORT_FIESLDS_SIZE = sizeof(content_size) + sizeof(orig_size) + sizeof(packet_number) + sizeof(total_packets) + NAME_LEN;
 		Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, char* content);
 		void send_request_body(std::shared_ptr<tcp::socket>& socket) override;
 		uint32_t get_len() override;
@@ -92,6 +94,7 @@ private:
 	void send_request(std::shared_ptr<tcp::socket>& socket);
 
 public:
+	static const size_t MAX_FILE_SENT_SIZE = ((size_t)1 << (4 * 8)) - Send_File_Request_Body::SHORT_FIESLDS_SIZE; //maximal length of a file that can be sent in one request (limited by the size of payload_size)
 	static void general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name);
 	static void send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name, std::string& key);
 	static void send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string &file_name, char *content);
@@ -201,6 +204,7 @@ namespace Encryption_Utils {
 
 namespace Cksum {
 	unsigned long memcrc(char* b, size_t n);
+	unsigned long get_cksum(std::string fname);
 }
 
 class Client {
@@ -226,8 +230,9 @@ private:
 	void read_me_info();
 	void connect_to_port();
 	void send_public_key();
-	static char * read_file(std::string fname);
+	//static char * read_file(std::string fname);
 	void send_file();
+	bool send_file_single_request(char* content, uint16_t packet_num, uint16_t tot_packs);
 	void create_me_info();
 
 
