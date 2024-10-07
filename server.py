@@ -51,17 +51,14 @@ class Server:
                 request.read_request()
                 self.executor.execute(request)
 
-        except ConnectionResetError:
-            print('Client disconnected abruptly')
+        except ConnectionError:
+            print('Client disconnected.')
 
-        except ConnectionError as e:
-            print(f"Connection error: {e}")
-
-        #except Exception as e:
-         #   print("Exception in request handling.")
+        except Exception as e:
+            print("Exception in request handling.")
 
         finally:
-            print('Closing connection')
+            print('Closing connection.')
             conn.close()
 
 

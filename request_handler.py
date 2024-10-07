@@ -35,25 +35,18 @@ class Request_Parser:
         self.sock = socket
 
     def recv_exact(self, num_bytes):
-        print("in recv_exact")
         """Receive exactly `num_bytes` from the socket."""
         data = b''
         while len(data) < num_bytes:
             packet = self.sock.recv(num_bytes - len(data))
             if not packet:
-                print("recv exact raising error.")
                 raise ConnectionError("Connection closed unexpectedly.")
             data += packet
         return data
 
     # returns False if no text was received from the client - the connection was closed. True otherwise
     def read_request(self):
-        '''
-        data = self.sock.recv(1024)
-        print(data)
-        print('len:', len(data))
-        '''
-        self.client_id = str(uuid.UUID(bytes=self.recv_exact(Request_Parser.CLIENT_ID_SIZE)))
+        self.client_id = self.recv_exact(Request_Parser.CLIENT_ID_SIZE)
         self.version, self.code, self.payload_size = (
             struct.unpack('<BHI',
                           self.recv_exact(Request_Parser.VERSION_SIZE + Request_Parser.CODE_SIZE +
@@ -69,7 +62,8 @@ class Request_Parser:
         self.parse_payload(self.payload)
 
     def parse_payload(self, payload):
-        print("in parse_payload")
+        print("payload size: ", len(payload))
+        print(f"Received payload: {payload}")
         if self.code == self.SEND_FILE:
             self.body = Request_Parser.Send_File_Request_Body(payload)
         elif self.code == Request_Parser.SEND_PUBLIC_KEY:
@@ -80,12 +74,10 @@ class Request_Parser:
 
     class General_Request_body:
         def __init__(self, data):
-            print("in General_Request_body")
-            self.name = data[0:Request_Parser.NAME_LEN].decode('utf-8')
-            print("name", self.name)
+            self.name = data[0:Request_Parser.NAME_LEN].decode('utf-8').rstrip('\x00')
     class Send_Key_Request_Body:
         def __init__(self, data):
-            self.name = data[0:Request_Parser.NAME_LEN].decode('utf-8')
+            self.name = data[0:Request_Parser.NAME_LEN].decode('utf-8').rstrip('\x00')
             self.public_key = data[Request_Parser.NAME_LEN:Request_Parser.NAME_LEN+Request_Parser.PUBLIC_KEY_SIZE]
 
     class Send_File_Request_Body:
@@ -97,5 +89,5 @@ class Request_Parser:
         def __init__(self, data):
             num_fields_size = self.S_ORIG_SIZE + self.S_CONTENT_SIZE + self.S_PACKET_NUM + self.S_TOTAL_PACKS
             self.content_size, self.orig_size, self.packet_num, self.total_packs = struct.unpack('<IIHH', data[0:num_fields_size])
-            self.filename = data[num_fields_size:num_fields_size + Request_Parser.NAME_LEN].decode('utf-8')
-            self.encrypted_content = data[num_fields_size + Request_Parser.NAME_LEN:num_fields_size + Request_Parser.NAME_LEN + self.content_size].decode('utf-8')
+            self.filename = data[num_fields_size:num_fields_size + Request_Parser.NAME_LEN].decode('utf-8').rstrip('\x00')
+            self.encrypted_content = data[num_fields_size + Request_Parser.NAME_LEN:num_fields_size + Request_Parser.NAME_LEN + self.content_size]

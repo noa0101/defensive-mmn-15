@@ -10,9 +10,13 @@ def generate_AES_key():
     return get_random_bytes(AES_KEY_SIZE)
 
 def RSA_encryption(content, rsa_public_key):
-    cipher_rsa = PKCS1_OAEP.new(rsa_public_key)
-    return cipher_rsa.encrypt(content)
+    if isinstance(rsa_public_key, bytes):
+        public_key = RSA.import_key(rsa_public_key)  # Convert bytes to RSA key
+    else:
+        public_key = rsa_public_key  # If it's already an RSA key, use it directly
 
+    cipher_rsa = PKCS1_OAEP.new(public_key)
+    return cipher_rsa.encrypt(content)
 
 def decrypt_aes(ciphertext, aes_key, iv=b'\x00' * 16):
     # Initialize the AES cipher in CBC mode

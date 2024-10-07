@@ -24,7 +24,6 @@ class Response:
     }
 
     def __init__(self, version, code, body):
-        print("--------------in init--------------------")
         self.version = version
         self.code = code
         self.payload = body.serialize()
@@ -39,11 +38,11 @@ class Response:
         socket.send(self.serialize())
 
     class Response_Body:
-        def __init__(self, client_id=''):
+        def __init__(self, client_id=b''):
             self.client_id = client_id
 
         def serialize(self):
-            return self.client_id.encode('utf-8')
+            return self.client_id
 
     class Send_Key_Response_Body(Response_Body):
         def __init__(self, client_id, encrypted_key):
@@ -51,7 +50,7 @@ class Response:
             self.encrypted_key = encrypted_key
 
         def serialize(self):
-            return super().serialize()+self.encrypted_key.encode('utf-8')
+            return super().serialize()+self.encrypted_key
 
     class Send_File_Response_Body(Response_Body):
         def __init__(self, client_id, content_size, file_name, cksum):

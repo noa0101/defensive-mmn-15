@@ -23,14 +23,6 @@ std::string Encryption_Utils::generate_RSA_keyPair() {
     CryptoPP::StringSink ss(publicKeyString);
     publicKey.Save(ss);
     return publicKeyString;
-    
-    /*
-    std::string publicKeyString;
-    StringSink stringSink(publicKeyString);
-    std::string base64PublicKey;
-    StringSource(publicKeyString, true, new Base64Encoder(new StringSink(base64PublicKey)));
-
-    return base64PublicKey;*/
 }
 
 
@@ -41,6 +33,25 @@ CryptoPP::RSA::PrivateKey Encryption_Utils::load_private_key(const std::string& 
     privateKey.Load(file);
     return privateKey;
 }
+
+std::string Encryption_Utils::get_encoded_privkey() {
+    CryptoPP::RSA::PrivateKey privateKey = Encryption_Utils::load_private_key("priv.key");
+    std::string encoded_key;
+    std::string private_key_str;
+
+    CryptoPP::StringSink ss(private_key_str);
+    privateKey.DEREncode(ss);
+
+    // Base64 encode the private key string
+    CryptoPP::StringSource(private_key_str, true,
+        new CryptoPP::Base64Encoder(
+            new CryptoPP::StringSink(encoded_key)
+        )
+    );
+
+    return encoded_key;
+}
+
 
 std::string Encryption_Utils::decrypt_AES_key(const std::string& encryptedKey) {
     CryptoPP::RSA::PrivateKey privateKey = load_private_key("priv.key");
@@ -80,8 +91,8 @@ char* Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
         throw std::runtime_error("Encryption failed: " + std::string(e.what()));
     }
 
-    char* output = new char[cipherText.size()];
+    char* output = new char[cipherText.size()+1];
     memcpy(output, cipherText.data(), cipherText.size());
-
+    output[cipherText.size()] = '\0'; //null terminate
     return output;
 }

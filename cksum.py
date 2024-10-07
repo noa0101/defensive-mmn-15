@@ -4,6 +4,8 @@ python.
 
 The constants and routine are cribbed from the POSIX man page
 """
+import sys
+
 crctab = [ 0x00000000, 0x04c11db7, 0x09823b6e, 0x0d4326d9, 0x130476dc,
         0x17c56b6b, 0x1a864db2, 0x1e475005, 0x2608edb8, 0x22c9f00f,
         0x2f8ad6d6, 0x2b4bcb61, 0x350c9b64, 0x31cd86d3, 0x3c8ea00a,
@@ -59,10 +61,10 @@ crctab = [ 0x00000000, 0x04c11db7, 0x09823b6e, 0x0d4326d9, 0x130476dc,
 
 UNSIGNED = lambda n: n & 0xffffffff
 
-def calc_crc(content):
-    n = len(content)
+def memcrc(b):
+    n = len(b)
     i = c = s = 0
-    for ch in content:
+    for ch in b:
         tabidx = (s>>24)^ch
         s = UNSIGNED((s << 8)) ^ crctab[tabidx]
 
@@ -71,3 +73,13 @@ def calc_crc(content):
         n = n >> 8
         s = UNSIGNED(s << 8) ^ crctab[(s >> 24) ^ c]
     return UNSIGNED(~s)
+
+
+def get_crc(fname):
+    try:
+        buffer = open(fname, 'rb').read()
+        return memcrc(buffer)
+    except IOError:
+        raise Exception("Unable to open input file", fname)
+    except Exception as err:
+        raise Exception("Error processing the file", err)

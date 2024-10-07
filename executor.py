@@ -7,7 +7,7 @@ import shutil
 from request_handler import Request_Parser
 from response_handler import Response
 import tempfile
-from cksum import calc_crc
+from cksum import get_crc
 
 DEFAULT_VERSION = 3
 
@@ -33,15 +33,18 @@ class Executor:
         first_run = not os.path.exists(self.db_file)
 
         if first_run:
-            print("------------creating database----------------------")
+            print("------------creating database-------------------")
             self.create_database()
+
+        else:
+            print("------------loading existing database-------------------")
 
     def create_database(self):
         connection = self.connect_to_db()
         cursor = connection.cursor()
         create_tables_command = """
             CREATE TABLE clients (
-                ID CHAR(16),
+                ID BLOB,
                 Name CHAR(255),
                 PublicKey CHAR(160),
                 LastSeen DATETIME,
@@ -88,25 +91,22 @@ class Executor:
             connection.close()
 
     def execute(self, request):
-        print("in execute :)))))))))))))))))))")
         connection = self.connect_to_db()  # Create a new connection
         cursor = connection.cursor()
 
         try:
+            print("--------------------------------------------------")
             func_name = self.FUNCTIONS_DICT.get(request.code)
-            if (not (request.code == Request_Parser.REGISTRATION or Executor.client_exists(request.client_id, cursor))) or not func_name:
-                print("Invalid request.")
-                print(f"client exists returned: {Executor.client_exists(request.client_id, cursor)}")
-                print("func name: ", func_name)
+            if not func_name:
                 Response.send_general_error(request.sock)
             else:
                 getattr(self, func_name)(request, cursor)
 
             self.update_last_seen(request.client_id, cursor)
             connection.commit()  # Commit changes
-        #except sqlite3.Error as e:
-         #   print(f"Database error: {e}")
-          #  Response.send_general_error(request.sock)
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
+            Response.send_general_error(request.sock)
 
         #except Exception as e:
          #   print(f"Exception during server activity: {e}")
@@ -114,6 +114,7 @@ class Executor:
 
         finally:
             connection.close()
+            print("--------------------------------------------------\n")
             #self.print_database()
 
     @staticmethod
@@ -123,23 +124,27 @@ class Executor:
 
     @staticmethod
     def client_exists(client_id, cursor):
-        cursor.execute("SELECT 1 FROM clients WHERE ID = ?", (client_id),)
+        cursor.execute("SELECT 1 FROM clients WHERE ID = ?", (client_id,))
         result = cursor.fetchone()
         return result is not None
 
     @staticmethod
     def register(request, cursor):
-        user_id = str(uuid.uuid4())  # create new random user id
-
-        print("----------------user id: ", user_id)
-        cursor.execute(
-            'INSERT INTO clients (ID, Name, PublicKey, AES_Key) VALUES (?, ?, ?, ?)',
-            (user_id, request.body.name, "", ""))
-        resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_REGISTRATION, Response.Response_Body(user_id))
+        try:
+            user_id = uuid.uuid4().bytes  # create new random user id
+            cursor.execute(
+                'INSERT INTO clients (ID, Name, PublicKey, AES_Key) VALUES (?, ?, ?, ?)',
+                (user_id, request.body.name, None, None))
+            resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_REGISTRATION, Response.Response_Body(user_id))
+        except Exception as e:
+            resp = Response(DEFAULT_VERSION, Response.REGISTRATION_FAILED, Response.Response_Body())
         resp.send_response(request.sock)
 
     @staticmethod
     def get_public_key(request, cursor):
+        if not Executor.client_exists(request.client_id, cursor):
+            raise Exception("Client does not exist in database.")
+
         aes_key = encryption_utils.generate_AES_key()
         public_key = request.body.public_key
 
@@ -153,67 +158,95 @@ class Executor:
 
     @staticmethod
     def reconnect(request, cursor):
-        cursor.execute("SELECT PublicKey FROM clients WHERE ID = ?", (request.client_id,))
-        public_rsa_key = cursor.fetchone()[0]
-        aes_key = encryption_utils.generate_AES_key()
-        cursor.execute("""UPDATE clients SET AES_Key = ? WHERE ID = ?""", (aes_key, request.client_id))
+        if not Executor.client_exists(request.client_id, cursor):
+            resp = Response(DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
 
-        resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_RECONNECTION,
-                        Response.Send_Key_Response_Body(request.client_id,
-                                                         encryption_utils.RSA_encryption(aes_key, public_rsa_key)))
+        else:
+            cursor.execute("SELECT PublicKey FROM clients WHERE ID = ?", (request.client_id,))
+            public_rsa_key = cursor.fetchone()[0]
+
+            if public_rsa_key is None:
+                resp = Response(DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
+
+            else:
+                aes_key = encryption_utils.generate_AES_key()
+                cursor.execute("""UPDATE clients SET AES_Key = ? WHERE ID = ?""", (aes_key, request.client_id))
+
+                resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_RECONNECTION,
+                            Response.Send_Key_Response_Body(request.client_id,
+                                                             encryption_utils.RSA_encryption(aes_key, public_rsa_key)))
         resp.send_response(request.sock)
 
     @staticmethod
     def get_file(request, cursor):
+        if not Executor.client_exists(request.client_id, cursor):
+            raise Exception("Client does not exist in database.")
         # decrypt content
         cursor.execute("SELECT AES_Key FROM clients WHERE ID = ?", (request.client_id,))
         aes_key = cursor.fetchone()[0]
+        if aes_key is None:
+            Response.send_general_error(request.sock)
+            return
         decrypted_content = encryption_utils.decrypt_aes(request.body.encrypted_content, aes_key)
 
         # create file and write the content to it
-        temp_dir = tempfile.gettempdir()  # system's temp directory
-        temp_file = os.path.join(temp_dir, request.client_id, request.body.file_name)
-        with open(temp_file, 'w') as temp_file:
-            temp_file.write(decrypted_content)
+        temp_dir = os.path.join(tempfile.gettempdir(), "backup_server", request.client_id.hex())  # system's temp directory
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+        print("creating path ", temp_dir)
+        temp_file = os.path.join(temp_dir, request.body.filename)
+        with open(temp_file, 'w') as file:
+            file.write(decrypted_content)
 
         # add file to files table
         cursor.execute(
             'INSERT INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
-            (request.client_id, request.body.file_name, os.path.join(temp_dir, request.body.file_name), 0))
+            (request.client_id, request.body.filename, str(temp_file), 0))
 
         # send appropriate response
-        cksum = calc_crc(decrypted_content)
+        cksum = get_crc(temp_file)
         resp = Response(DEFAULT_VERSION, Response.FILE_RECEIVED,
                         Response.Send_File_Response_Body(request.client_id,
-                                                         len(decrypted_content), request.body.file_name, cksum))
+                                                         len(decrypted_content), request.body.filename, cksum))
         resp.send_response(request.sock)
 
     @staticmethod
     def validate_crc(request, cursor):
-        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.file_name,))
+        if not Executor.client_exists(request.client_id, cursor):
+            raise Exception("Client does not exist in database.")
+
+        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.name,))
         source_file = cursor.fetchone()[0]
-        destination_folder = os.path.join("c:\\server_backup\\authenticated\\", request.client_id)
+
+        if source_file is None:
+            Response.send_general_error(request.sock)
+            return
+
+        destination_folder = os.path.join("c:\\backup_server", request.client_id.hex())
 
         # Ensure the destination directory exists
         if not os.path.exists(destination_folder):
             os.makedirs(destination_folder)
 
-        destination_file = os.path.join(destination_folder, request.body.file_name)
+        destination_file = os.path.join(destination_folder, request.body.name)
         shutil.move(source_file, destination_file)
 
         cursor.execute("""UPDATE files SET Verified = ?, PathName = ? WHERE PathName = ?""",
-                       (1, destination_file, source_file))
+                       (1, str(destination_file), str(source_file)))
 
         resp = Response(DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
         resp.send_response(request.sock)
 
     @staticmethod
     def invalidate_crc(self, request, cursor):
-        pass  # no action needed here - everything stays as it is
-
+        if not Executor.client_exists(request.client_id, cursor):
+            raise Exception("Client does not exist in database.")
     @staticmethod
     def abort(request, cursor):
-        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.file_name,))
+        if not Executor.client_exists(request.client_id, cursor):
+            raise Exception("Client does not exist in database.")
+
+        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.filename,))
         file_path = cursor.fetchone()[0]
         os.remove(file_path)
         cursor.execute("DELETE FROM files WHERE PathName = ?", (file_path,))
