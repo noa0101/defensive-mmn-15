@@ -1,5 +1,7 @@
 import struct
 import socket
+import uuid
+
 
 
 class Request_Parser:
@@ -10,6 +12,16 @@ class Request_Parser:
     VALID_CRC = 900
     INVALID_CRC = 901
     FOURTH_INVALID_CRC = 902
+
+    codes = {
+        825: "REGISTRATION",
+        826: "SEND_PUBLIC_KEY",
+        827: "RECONNECTION",
+        828: "SEND_FILE",
+        900: "VALID_CRC",
+        901: "INVALID_CRC",
+        902: "FOURTH_INVALID_CRC"
+    }
 
     CLIENT_ID_SIZE = 16
     NAME_LEN = 255
@@ -22,6 +34,18 @@ class Request_Parser:
     def __init__(self, socket):
         self.sock = socket
 
+    def recv_exact(self, num_bytes):
+        print("in recv_exact")
+        """Receive exactly `num_bytes` from the socket."""
+        data = b''
+        while len(data) < num_bytes:
+            packet = self.sock.recv(num_bytes - len(data))
+            if not packet:
+                print("recv exact raising error.")
+                raise ConnectionError("Connection closed unexpectedly.")
+            data += packet
+        return data
+
     # returns False if no text was received from the client - the connection was closed. True otherwise
     def read_request(self):
         '''
@@ -29,17 +53,23 @@ class Request_Parser:
         print(data)
         print('len:', len(data))
         '''
-        self.client_id = self.sock.recv(Request_Parser.CLIENT_ID_SIZE)
-        if self.client_id == '':  # No message from client
-            return False
+        self.client_id = str(uuid.UUID(bytes=self.recv_exact(Request_Parser.CLIENT_ID_SIZE)))
         self.version, self.code, self.payload_size = (
             struct.unpack('<BHI',
-                          self.sock.recv(Request_Parser.VERSION_SIZE + Request_Parser.CODE_SIZE + Request_Parser.PAYLOAD_SIZE_SIZE)))
-        self.payload = self.sock.recv(self.payload_size)
+                          self.recv_exact(Request_Parser.VERSION_SIZE + Request_Parser.CODE_SIZE +
+                                         Request_Parser.PAYLOAD_SIZE_SIZE)))
+
+        if self.code in Request_Parser.codes:
+            print(f"Client made a request with code {self.code}: {Request_Parser.codes[self.code]}.")
+        else:
+            print(f"Client made a request with an invalid code: {self.code}.")
+
+
+        self.payload = self.recv_exact(self.payload_size)
         self.parse_payload(self.payload)
-        return True
 
     def parse_payload(self, payload):
+        print("in parse_payload")
         if self.code == self.SEND_FILE:
             self.body = Request_Parser.Send_File_Request_Body(payload)
         elif self.code == Request_Parser.SEND_PUBLIC_KEY:
@@ -50,11 +80,13 @@ class Request_Parser:
 
     class General_Request_body:
         def __init__(self, data):
+            print("in General_Request_body")
             self.name = data[0:Request_Parser.NAME_LEN].decode('utf-8')
+            print("name", self.name)
     class Send_Key_Request_Body:
         def __init__(self, data):
             self.name = data[0:Request_Parser.NAME_LEN].decode('utf-8')
-            self.public_key = data[Request_Parser.NAME_LEN:Request_Parser.PUBLIC_KEY_SIZE].decode('utf-8')
+            self.public_key = data[Request_Parser.NAME_LEN:Request_Parser.NAME_LEN+Request_Parser.PUBLIC_KEY_SIZE]
 
     class Send_File_Request_Body:
         S_CONTENT_SIZE = 4

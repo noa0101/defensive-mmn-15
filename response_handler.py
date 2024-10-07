@@ -12,7 +12,19 @@ class Response:
     RECONNECTION_FAILED = 1606
     GENERAL_ISSUE = 1607
 
+    codes = {
+        1600: "SUCCESSFUL_REGISTRATION",
+        1601: "REGISTRATION_FAILED",
+        1602: "PUBLIC_KEY_RECEIVED",
+        1603: "FILE_RECEIVED",
+        1604: "MESSAGE_RECEIVED",
+        1605: "SUCCESSFUL_RECONNECTION",
+        1606: "RECONNECTION_FAILED",
+        1607: "GENERAL_ISSUE"
+    }
+
     def __init__(self, version, code, body):
+        print("--------------in init--------------------")
         self.version = version
         self.code = code
         self.payload = body.serialize()
@@ -21,8 +33,11 @@ class Response:
     def serialize(self):
         format_string = '<BHI'
         return struct.pack(format_string, self.version, self.code, self.payload_size) + self.payload
+
     def send_response(self, socket):
+        print(f"Responding with code {self.code}: {self.codes[self.code]}.")
         socket.send(self.serialize())
+
     class Response_Body:
         def __init__(self, client_id=''):
             self.client_id = client_id

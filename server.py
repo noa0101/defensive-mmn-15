@@ -33,22 +33,37 @@ class Server:
             client_thread = threading.Thread(target=self.handle_client, args=(conn,))
             client_thread.start()
 
+
+    @staticmethod
+    def conn_open(conn):
+        try:
+            conn.send(b'')
+            return True
+        except ConnectionResetError:
+            return False
+
     def handle_client(self, conn):
         print("New client connected!")
+        request = Request_Parser(conn)
+
         try:
-            request = Request_Parser(conn)
-            while request.read_request():
+            while Server.conn_open(conn):
+                request.read_request()
                 self.executor.execute(request)
-            Server.close_connection(conn)
 
         except ConnectionResetError:
             print('Client disconnected abruptly')
-            Server.close_connection(conn)
 
-    @staticmethod
-    def close_connection(conn):
-        print('Closing connection')
-        conn.close()
+        except ConnectionError as e:
+            print(f"Connection error: {e}")
+
+        #except Exception as e:
+         #   print("Exception in request handling.")
+
+        finally:
+            print('Closing connection')
+            conn.close()
+
 
 
 if __name__ == "__main__":
