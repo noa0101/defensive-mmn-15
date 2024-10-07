@@ -61,7 +61,7 @@ Request::Request_Body::Request_Body(std::string name) : name(name) {}
 
 Request::Send_Key_Request_Body::Send_Key_Request_Body(std::string& name, std::string& key) : Request_Body(name), public_key(key) {}
 
-Request::Send_File_Request_Body::Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, char* content) :
+Request::Send_File_Request_Body::Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, std::shared_ptr<std::string> &content) :
     content_size(content_s), orig_size(orig_s), packet_number(pack_num),
     total_packets(tot_packs), Request_Body(file_name), message_content(content) {}
 
@@ -94,7 +94,7 @@ void Request::Send_Key_Request_Body::send_request_body(std::shared_ptr<tcp::sock
 
 void Request::Send_File_Request_Body::send_request_body(std::shared_ptr<tcp::socket>& socket) {
     boost::asio::write(*socket, boost::asio::buffer(serialize_short_fields()));
-    boost::asio::write(*socket, boost::asio::buffer(message_content, content_size));
+    boost::asio::write(*socket, boost::asio::buffer(*message_content, content_size));
 }
 
 //helping function to serialize the short fields of a request body of type send file request
@@ -133,7 +133,7 @@ void Request::send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned ch
     req.send_request(socket);
 }
 
-void Request::send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, char* content) {
+void Request::send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, std::shared_ptr<std::string> &content) {
     Request::check_name_len(file_name);
     auto bod = std::make_shared<Send_File_Request_Body>(content_s, orig_s, pack_num, tot_packs, file_name, content);
     auto head = std::make_shared<Request_Header>(id, ver, SEND_FILE, bod->get_len());

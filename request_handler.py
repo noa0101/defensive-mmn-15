@@ -62,8 +62,6 @@ class Request_Parser:
         self.parse_payload(self.payload)
 
     def parse_payload(self, payload):
-        print("payload size: ", len(payload))
-        print(f"Received payload: {payload}")
         if self.code == self.SEND_FILE:
             self.body = Request_Parser.Send_File_Request_Body(payload)
         elif self.code == Request_Parser.SEND_PUBLIC_KEY:

@@ -75,13 +75,13 @@ private:
 		uint32_t orig_size;
 		uint16_t packet_number;
 		uint16_t total_packets;
-		char *message_content;
+		std::shared_ptr<std::string> message_content;
 
 		std::string serialize_short_fields();
 
 	public:
 		static const size_t SHORT_FIESLDS_SIZE = sizeof(content_size) + sizeof(orig_size) + sizeof(packet_number) + sizeof(total_packets) + NAME_LEN;
-		Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, char* content);
+		Send_File_Request_Body(uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string& file_name, std::shared_ptr<std::string>& content);
 		void send_request_body(std::shared_ptr<tcp::socket>& socket) override;
 		uint32_t get_len() override;
 	};
@@ -98,7 +98,7 @@ public:
 	static const size_t MAX_FILE_SENT_SIZE = ((size_t)1 << (4 * 8)) - Send_File_Request_Body::SHORT_FIESLDS_SIZE; //maximal length of a file that can be sent in one request (limited by the size of payload_size)
 	static void general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name);
 	static void send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string &name, std::string& key);
-	static void send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string &file_name, char *content);
+	static void send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string &file_name, std::shared_ptr<std::string> &content);
 };
 
 
@@ -198,7 +198,7 @@ namespace Encryption_Utils {
 	std::string generate_RSA_keyPair();
 	CryptoPP::RSA::PrivateKey load_private_key(const std::string& filename);
 	std::string decrypt_AES_key(const std::string& encryptedKey);
-	char* AES_encryption(char* plaintext, std::string &key);
+	std::shared_ptr<std::string> AES_encryption(char* plaintext, std::string& key);
 	std::string get_encoded_privkey();
 }
 
@@ -246,5 +246,4 @@ namespace Protocol_Wrapper {
 	std::shared_ptr<Response> make_general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string& name);
 	std::string make_send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& name, std::string& key);
 	unsigned long make_send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& file_name, std::string& aes_key);
-	//bool send_file_single_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& file_name, std::string& aes_key, char* plaintext, uint16_t packet_num, uint16_t tot_packs);
 }

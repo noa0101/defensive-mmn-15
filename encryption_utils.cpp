@@ -70,11 +70,12 @@ std::string Encryption_Utils::decrypt_AES_key(const std::string& encryptedKey) {
 }
 
 
-char* Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
+std::shared_ptr<std::string> Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
     CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };
-
     CryptoPP::SecByteBlock keyBlock(reinterpret_cast<const CryptoPP::byte*>(key.data()), key.size());
-    std::string cipherText;
+
+    // Use unique_ptr for cipherText
+    auto cipherText = std::make_shared<std::string>();
 
     try {
         CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption encryptor;
@@ -82,7 +83,7 @@ char* Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
 
         CryptoPP::StringSource ss(plaintext, true,
             new CryptoPP::StreamTransformationFilter(encryptor,
-                new CryptoPP::StringSink(cipherText)
+                new CryptoPP::StringSink(*cipherText) // Write to the dereferenced unique_ptr
             )
         );
 
@@ -91,8 +92,6 @@ char* Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
         throw std::runtime_error("Encryption failed: " + std::string(e.what()));
     }
 
-    char* output = new char[cipherText.size()+1];
-    memcpy(output, cipherText.data(), cipherText.size());
-    output[cipherText.size()] = '\0'; //null terminate
-    return output;
+    // Return the unique_ptr containing the cipherText
+    return cipherText;
 }

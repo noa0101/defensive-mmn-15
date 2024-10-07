@@ -17,9 +17,8 @@ unsigned long Protocol_Wrapper::make_send_file_request(std::shared_ptr<tcp::sock
         std::streamsize bytesRead = file.gcount(); // Get the number of bytes actually read
         buffer[bytesRead] = '\0'; // Null terminate the buffer
 
-        char* ciphertext = Encryption_Utils::AES_encryption(buffer, aes_key);
-        Request::send_file_request(socket, id, ver, strlen(ciphertext), strlen(buffer), packet_num, tot_packs, file_name, ciphertext);
-        delete[] ciphertext;
+        auto ciphertext = Encryption_Utils::AES_encryption(buffer, aes_key);
+        Request::send_file_request(socket, id, ver, ciphertext->size(), strlen(buffer), packet_num, tot_packs, file_name, ciphertext);
         packet_num++;
     }
 
@@ -30,13 +29,6 @@ unsigned long Protocol_Wrapper::make_send_file_request(std::shared_ptr<tcp::sock
     file.close();
     return resp.get_cksum();
 }
-
-/*
-void Protocol_Wrapper::send_file_single_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& file_name, std::string& aes_key, char* plaintext, uint16_t packet_num, uint16_t tot_packs) {
-    char* ciphertext = Encryption_Utils::AES_encryption(plaintext, aes_key);
-    Request::send_file_request(socket, id, ver, strlen(ciphertext), strlen(plaintext), packet_num, tot_packs, file_name, ciphertext);
-    delete[] ciphertext;
-}*/
 
 //send public key and gets server response, returns the decrypted aes key if all went well of nullptr if server responded with error
 std::string Protocol_Wrapper::make_send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& name, std::string& key) {
