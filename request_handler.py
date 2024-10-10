@@ -52,11 +52,6 @@ class Request_Parser:
                           self.recv_exact(Request_Parser.VERSION_SIZE + Request_Parser.CODE_SIZE +
                                          Request_Parser.PAYLOAD_SIZE_SIZE)))
 
-        if self.code in Request_Parser.codes:
-            print(f"Client made a request with code {self.code}: {Request_Parser.codes[self.code]}.")
-        else:
-            print(f"Client made a request with an invalid code: {self.code}.")
-
 
         self.payload = self.recv_exact(self.payload_size)
         self.parse_payload(self.payload)

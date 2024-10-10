@@ -65,37 +65,17 @@ class Executor:
     def connect_to_db(self):
         return sqlite3.connect(self.db_file)
 
-    def print_database(self):
-        connection = self.connect_to_db()
-        cursor = connection.cursor()
-
-        try:
-            # Print clients table
-            print("Clients Table:")
-            cursor.execute("SELECT * FROM clients")
-            clients = cursor.fetchall()
-            for row in clients:
-                print(row)
-
-            # Print files table
-            print("\nFiles Table:")
-            cursor.execute("SELECT * FROM files")
-            files = cursor.fetchall()
-            for row in files:
-                print(row)
-
-        except sqlite3.Error as e:
-            print(f"Error reading database: {e}")
-
-        finally:
-            connection.close()
-
     def execute(self, request):
         connection = self.connect_to_db()  # Create a new connection
         cursor = connection.cursor()
 
         try:
+            if request.code in Request_Parser.codes:
+                print(f"Client made a request with code {request.code}: {Request_Parser.codes[request.code]}.")
+            else:
+                print(f"Client made a request with an invalid code: {request.code}.")
             print("--------------------------------------------------")
+
             func_name = self.FUNCTIONS_DICT.get(request.code)
             if not func_name:
                 Response.send_general_error(request.sock)
@@ -108,19 +88,19 @@ class Executor:
             print(f"Database error: {e}")
             Response.send_general_error(request.sock)
 
-        #except Exception as e:
-         #   print(f"Exception during server activity: {e}")
-          #  Response.send_general_error(request.sock)
+        except Exception as e:
+            print(f"Exception during server activity: {e}")
+            Response.send_general_error(request.sock)
 
         finally:
             connection.close()
             print("--------------------------------------------------\n")
-            #self.print_database()
 
     @staticmethod
     def update_last_seen(client_id, cursor):
-        current_time = datetime.now()
-        cursor.execute("""UPDATE clients SET LastSeen = ? WHERE ID = ?""", (current_time, client_id))
+        if(Executor.client_exists(client_id, cursor)):
+            current_time = datetime.now()
+            cursor.execute("""UPDATE clients SET LastSeen = ? WHERE ID = ?""", (current_time, client_id))
 
     @staticmethod
     def client_exists(client_id, cursor):
@@ -181,39 +161,63 @@ class Executor:
     def get_file(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
-        # decrypt content
-        cursor.execute("SELECT AES_Key FROM clients WHERE ID = ?", (request.client_id,))
+
+        client_id = request.client_id
+        filename = request.body.filename
+        total_packs = request.body.total_packs
+        org_file_size = request.body.orig_size
+
+        cursor.execute("SELECT AES_Key FROM clients WHERE ID = ?", (client_id,))
         aes_key = cursor.fetchone()[0]
         if aes_key is None:
             Response.send_general_error(request.sock)
             return
-        decrypted_content = encryption_utils.decrypt_aes(request.body.encrypted_content, aes_key)
 
         # create file and write the content to it
-        temp_dir = os.path.join(tempfile.gettempdir(), "backup_server", request.client_id.hex())  # system's temp directory
+        temp_dir = os.path.join(tempfile.gettempdir(), "backup_server",
+                                request.client_id.hex())  # system's temp directory
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
-        print("creating path ", temp_dir)
         temp_file = os.path.join(temp_dir, request.body.filename)
+
+
         with open(temp_file, 'w') as file:
-            file.write(decrypted_content)
+            for packet_num in range(total_packs):
+                # check packet compatability
+                if request.code != Request_Parser.SEND_FILE or request.body.filename != filename or request.body.total_packs != total_packs or request.body.orig_size != org_file_size or request.body.packet_num != packet_num+1:
+                    print("Server expected to receive packet number", packet_num+1, "for file", filename, ". Received incompatible request.")
+                    Response.send_general_error(request.sock)
+                    return
+
+                # decrypt message content and write it to file
+                decrypted_content = encryption_utils.decrypt_aes(request.body.encrypted_content, aes_key)
+                file.write(decrypted_content)
+
+                # if expecting more packets of the file, read the next request
+                if packet_num < total_packs-1:
+                    request.read_request()
 
         # add file to files table
         cursor.execute(
             'INSERT INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
-            (request.client_id, request.body.filename, str(temp_file), 0))
+            (request.client_id, request.body.filename, str(temp_file), None))
 
         # send appropriate response
-        cksum = get_crc(temp_file)
+        cksum, file_size = get_crc(temp_file)
         resp = Response(DEFAULT_VERSION, Response.FILE_RECEIVED,
                         Response.Send_File_Response_Body(request.client_id,
-                                                         len(decrypted_content), request.body.filename, cksum))
+                                                         file_size, request.body.filename, cksum))
         resp.send_response(request.sock)
 
     @staticmethod
     def validate_crc(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
+
+        cursor.execute("SELECT Verified FROM files WHERE FileName = ?", (request.body.name,))
+        validated = cursor.fetchone()[0]
+        if validated is not None:
+            raise Exception("File is already validated.")
 
         cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.name,))
         source_file = cursor.fetchone()[0]
@@ -238,15 +242,16 @@ class Executor:
         resp.send_response(request.sock)
 
     @staticmethod
-    def invalidate_crc(self, request, cursor):
+    def invalidate_crc(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
     @staticmethod
     def abort(request, cursor):
+        print("in abort")
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
 
-        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.filename,))
+        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.name,))
         file_path = cursor.fetchone()[0]
         os.remove(file_path)
         cursor.execute("DELETE FROM files WHERE PathName = ?", (file_path,))

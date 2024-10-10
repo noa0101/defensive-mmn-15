@@ -6,25 +6,27 @@ unsigned long Protocol_Wrapper::make_send_file_request(std::shared_ptr<tcp::sock
     if (!file.is_open())
         throw std::runtime_error("Error opening file to send: " + file_name + '.');
 
-    size_t file_size = file.tellg();
+    file.seekg(0, std::ios::end);
+    size_t file_size = file.tellg(); // Get the size of the file
+    file.seekg(0, std::ios::beg); // Move the file pointer back to the beginning
+    
     char* buffer = new char[Request::MAX_FILE_SENT_SIZE + 1]; // +1 for null terminator
     uint16_t tot_packs = ceil((double)file_size / Request::MAX_FILE_SENT_SIZE);
     uint16_t packet_num;
-    
+ 
     packet_num = 1;
-    while (!file.eof()) {
+    while (packet_num <= tot_packs) {
         file.read(buffer, Request::MAX_FILE_SENT_SIZE);
         std::streamsize bytesRead = file.gcount(); // Get the number of bytes actually read
         buffer[bytesRead] = '\0'; // Null terminate the buffer
 
         auto ciphertext = Encryption_Utils::AES_encryption(buffer, aes_key);
-        Request::send_file_request(socket, id, ver, ciphertext->size(), strlen(buffer), packet_num, tot_packs, file_name, ciphertext);
+        Request::send_file_request(socket, id, ver, ciphertext->size(), file_size, packet_num, tot_packs, file_name, ciphertext);
         packet_num++;
     }
 
     Response resp(socket);
     resp.print_response_code();
-
     delete[] buffer; // Clean up the heap-allocated buffer
     file.close();
     return resp.get_cksum();

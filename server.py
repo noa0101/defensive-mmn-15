@@ -58,7 +58,7 @@ class Server:
             print("Exception in request handling.")
 
         finally:
-            print('Closing connection.')
+            print('Closing connection.\n\n')
             conn.close()
 
 

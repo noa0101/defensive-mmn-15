@@ -171,6 +171,7 @@ void Client::send_file() {
 
     do {
         unsigned long server_cksum = Protocol_Wrapper::make_send_file_request(socket, uuid, VERSION, file_to_send, aes_key);
+        tries++;
 
         if (cksum == server_cksum) {
             std::cout << "File received with correct cksum. Sending validation message.\n";
@@ -188,9 +189,6 @@ void Client::send_file() {
                 std::cout << "File received with incorrect cksum.\n";
             }
         }
-
-        tries++;
-
     } while (!validated && tries < MAX_TRIES);
 }
 

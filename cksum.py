@@ -78,7 +78,7 @@ def memcrc(b):
 def get_crc(fname):
     try:
         buffer = open(fname, 'rb').read()
-        return memcrc(buffer)
+        return memcrc(buffer), len(buffer)
     except IOError:
         raise Exception("Unable to open input file", fname)
     except Exception as err:

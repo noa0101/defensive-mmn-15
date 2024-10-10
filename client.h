@@ -95,7 +95,7 @@ private:
 	void send_request(std::shared_ptr<tcp::socket>& socket);
 
 public:
-	static const size_t MAX_FILE_SENT_SIZE = ((size_t)1 << (4 * 8)) - Send_File_Request_Body::SHORT_FIESLDS_SIZE; //maximal length of a file that can be sent in one request (limited by the size of payload_size)
+	static const size_t MAX_FILE_SENT_SIZE = 1024; //maximal length of a file that can be sent in one request (limit to avoid very big packets)
 	static void general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string &name);
 	static void send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string &name, std::string& key);
 	static void send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint32_t content_s, uint32_t orig_s, uint16_t pack_num, uint16_t tot_packs, std::string &file_name, std::shared_ptr<std::string> &content);
