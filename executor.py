@@ -44,7 +44,7 @@ class Executor:
         cursor = connection.cursor()
         create_tables_command = """
             CREATE TABLE clients (
-                ID BLOB,
+                ID BLOB PRIMARY KEY,
                 Name CHAR(255),
                 PublicKey CHAR(160),
                 LastSeen DATETIME,
@@ -54,9 +54,13 @@ class Executor:
             CREATE TABLE files (
                 ID CHAR(16),
                 FileName CHAR(255),
-                PathName CHAR(255),
+                PathName CHAR(255) PRIMARY KEY,
                 Verified CHAR(1)
             );
+            
+            -- Indexes for performance optimization
+            CREATE INDEX idx_client_name ON clients(Name);  -- Index on Name in clients
+            CREATE INDEX idx_files_pathname ON files(PathName);  -- Index on PathName in files
         """
         cursor.executescript(create_tables_command)
         connection.commit()
@@ -84,6 +88,7 @@ class Executor:
 
             self.update_last_seen(request.client_id, cursor)
             connection.commit()  # Commit changes
+
         except sqlite3.Error as e:
             print(f"Database error: {e}")
             Response.send_general_error(request.sock)
@@ -95,6 +100,7 @@ class Executor:
         finally:
             connection.close()
             print("--------------------------------------------------\n")
+
 
     @staticmethod
     def update_last_seen(client_id, cursor):
@@ -158,6 +164,10 @@ class Executor:
         resp.send_response(request.sock)
 
     @staticmethod
+    def get_temp_file_path(id, filename):
+        return os.path.join(tempfile.gettempdir(), "backup_server", id.hex(), filename)
+
+    @staticmethod
     def get_file(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
@@ -173,14 +183,13 @@ class Executor:
             Response.send_general_error(request.sock)
             return
 
-        # create file and write the content to it
-        temp_dir = os.path.join(tempfile.gettempdir(), "backup_server",
-                                request.client_id.hex())  # system's temp directory
+        # create directory and get the file path
+        temp_dir = os.path.join(tempfile.gettempdir(), "backup_server", client_id.hex())  # system's temp directory
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
-        temp_file = os.path.join(temp_dir, request.body.filename)
+        temp_file = Executor.get_temp_file_path(client_id, filename)
 
-
+        # if file with that path already exists, we will write over it (only the client can overwrite their own files)
         with open(temp_file, 'w') as file:
             for packet_num in range(total_packs):
                 # check packet compatability
@@ -197,10 +206,11 @@ class Executor:
                 if packet_num < total_packs-1:
                     request.read_request()
 
-        # add file to files table
+        # add file to files table (or replace an existing line with the new one)
+        print("inserting into files table")
         cursor.execute(
-            'INSERT INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
-            (request.client_id, request.body.filename, str(temp_file), None))
+            'INSERT OR REPLACE INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
+            (request.client_id, request.body.filename, str(temp_file), 0))
 
         # send appropriate response
         cksum, file_size = get_crc(temp_file)
@@ -215,17 +225,18 @@ class Executor:
             raise Exception("Client does not exist in database.")
 
         cursor.execute("SELECT Verified FROM files WHERE FileName = ?", (request.body.name,))
-        validated = cursor.fetchone()[0]
-        if validated is not None:
-            raise Exception("File is already validated.")
+        validated_row = cursor.fetchone()
 
-        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.name,))
-        source_file = cursor.fetchone()[0]
+        # the file is not found in the database
+        if validated_row is None:
+            raise Exception("File does not exist in database.")
 
-        if source_file is None:
-            Response.send_general_error(request.sock)
-            return
+        validated = validated_row[0]
 
+        if validated == 1:  # if file has already been validated
+            raise Exception("file has already been validated.")
+
+        source_file = Executor.get_temp_file_path(request.client_id, request.body.name)
         destination_folder = os.path.join("c:\\backup_server", request.client_id.hex())
 
         # Ensure the destination directory exists
@@ -235,8 +246,12 @@ class Executor:
         destination_file = os.path.join(destination_folder, request.body.name)
         shutil.move(source_file, destination_file)
 
-        cursor.execute("""UPDATE files SET Verified = ?, PathName = ? WHERE PathName = ?""",
-                       (1, str(destination_file), str(source_file)))
+        cursor.execute("DELETE FROM files WHERE PathName = ?", (source_file,))
+
+        # allow writing over a previous file belonging to that client with the same name
+        cursor.execute(
+            'INSERT OR REPLACE INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
+            (request.client_id, request.body.name, str(destination_file), 1))
 
         resp = Response(DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
         resp.send_response(request.sock)
@@ -247,12 +262,13 @@ class Executor:
             raise Exception("Client does not exist in database.")
     @staticmethod
     def abort(request, cursor):
-        print("in abort")
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
 
-        cursor.execute("SELECT PathName FROM files WHERE FileName = ?", (request.body.name,))
-        file_path = cursor.fetchone()[0]
+        file_path = Executor.get_temp_file_path(request.client_id, request.body.name)
+        if not os.path.exists(file_path):
+            raise Exception("File does not exist in backup.")
+
         os.remove(file_path)
         cursor.execute("DELETE FROM files WHERE PathName = ?", (file_path,))
         resp = Response(DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
