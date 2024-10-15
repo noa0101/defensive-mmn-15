@@ -1,4 +1,4 @@
-#include "client.h"
+#include "request.h"
 /*
 * This file contains code that handles the requests according to the protocol.
 */
@@ -66,7 +66,6 @@ Request::Send_File_Request_Body::Send_File_Request_Body(uint32_t content_s, uint
     total_packets(tot_packs), Request_Body(file_name), message_content(content) {}
 
 
-
 //get the length of the serialization of the message body
 uint32_t Request::Request_Body::get_len() {
     return NAME_LEN;
@@ -104,8 +103,8 @@ std::string Request::Send_File_Request_Body::serialize_short_fields() {
 
     add_int_serialization<uint32_t>(serialized_data, content_size, offset);
     add_int_serialization<uint32_t>(serialized_data, orig_size, offset);
-    add_int_serialization<uint16_t>(serialized_data, packet_number, offset);
     add_int_serialization<uint16_t>(serialized_data, total_packets, offset);
+    add_int_serialization<uint16_t>(serialized_data, packet_number, offset);
 
     std::memcpy(serialized_data.data() + offset, name.data(), name.size());
     return serialized_data;

@@ -1,27 +1,22 @@
-#include "client.h"
-#include <iostream>
-#include <cryptlib.h>
-#include <osrng.h>
-#include <rsa.h>
-#include <files.h>
-#include <secblock.h>
-#include <hex.h>
-#include <filters.h>
-#include <base64.h>
-#include <modes.h>
+/*
+* THis file contains wrapper functions for existing Cryptopp functions, for easier and custom use of the client.
+*/
 
+#include "encryption.h"
 
+// function to generate an RSA key pair.
+// Returns the public key as a string and saves private key into the file priv.key
 std::string Encryption_Utils::generate_RSA_keyPair() {
     CryptoPP::AutoSeededRandomPool rng;
     CryptoPP::RSA::PrivateKey privateKey;
     privateKey.GenerateRandomWithKeySize(rng, 1024); //generate random public key
     CryptoPP::RSA::PublicKey publicKey(privateKey); //generate public key
-    CryptoPP::FileSink file("priv.key", true); //save private key to file
-    privateKey.Save(file);
+    CryptoPP::FileSink file("priv.key", true); 
+    privateKey.Save(file); //save private key to file
 
     std::string publicKeyString;
     CryptoPP::StringSink ss(publicKeyString);
-    publicKey.Save(ss);
+    publicKey.Save(ss); // save public key into a string
     return publicKeyString;
 }
 
@@ -34,6 +29,7 @@ CryptoPP::RSA::PrivateKey Encryption_Utils::load_private_key(const std::string& 
     return privateKey;
 }
 
+// returns the private key encoded in base 64, for convenient saving in file me.info
 std::string Encryption_Utils::get_encoded_privkey() {
     CryptoPP::RSA::PrivateKey privateKey = Encryption_Utils::load_private_key("priv.key");
     std::string encoded_key;
@@ -52,7 +48,7 @@ std::string Encryption_Utils::get_encoded_privkey() {
     return encoded_key;
 }
 
-
+// receives a string (for the use of the client, the encrypted AES key received from the server) and returns its decryption using the RSA private key.
 std::string Encryption_Utils::decrypt_AES_key(const std::string& encryptedKey) {
     CryptoPP::RSA::PrivateKey privateKey = load_private_key("priv.key");
     CryptoPP::AutoSeededRandomPool rng;
@@ -69,7 +65,8 @@ std::string Encryption_Utils::decrypt_AES_key(const std::string& encryptedKey) {
     return decryptedAESKey;
 }
 
-
+// receivs a string (assumes null terminated) and an AES key and returns its encryption.
+// works on the heap to allow for relatively long texts.
 std::shared_ptr<std::string> Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
     CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };
     CryptoPP::SecByteBlock keyBlock(reinterpret_cast<const CryptoPP::byte*>(key.data()), key.size());
@@ -92,6 +89,6 @@ std::shared_ptr<std::string> Encryption_Utils::AES_encryption(char* plaintext, s
         throw std::runtime_error("Encryption failed: " + std::string(e.what()));
     }
 
-    // Return the unique_ptr containing the cipherText
+    // Return the shared_ptr containing the cipherText
     return cipherText;
 }

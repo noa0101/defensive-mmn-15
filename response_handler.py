@@ -1,8 +1,12 @@
+'''
+This file contains the Response class, that has methods to represent, serialize and send a response.
+'''
+
 import struct
 DEFAULT_VERSION = 3
 
-
 class Response:
+    # response codes
     SUCCESSFUL_REGISTRATION = 1600
     REGISTRATION_FAILED = 1601
     PUBLIC_KEY_RECEIVED = 1602
@@ -11,7 +15,6 @@ class Response:
     SUCCESSFUL_RECONNECTION = 1605
     RECONNECTION_FAILED = 1606
     GENERAL_ISSUE = 1607
-
     codes = {
         1600: "SUCCESSFUL_REGISTRATION",
         1601: "REGISTRATION_FAILED",
@@ -37,8 +40,9 @@ class Response:
         print(f"Responding with code {self.code}: {self.codes[self.code]}.")
         socket.send(self.serialize())
 
+    # classes to represent the different types of response bodies
     class Response_Body:
-        def __init__(self, client_id=b''):
+        def __init__(self, client_id=b''):  # default value for responses that don't contains a client id
             self.client_id = client_id
 
         def serialize(self):
@@ -64,7 +68,8 @@ class Response:
             format_string = '<I255sI'
             return super().serialize() + struct.pack(format_string, self.content_size, padded_file_name, self.cksum)
 
+    # method to send a general error response
     @staticmethod
-    def send_general_error(socket, code=GENERAL_ISSUE):
-        resp = Response(DEFAULT_VERSION, code, Response.Response_Body())
+    def send_general_error(socket):
+        resp = Response(DEFAULT_VERSION, Response.GENERAL_ISSUE, Response.Response_Body())
         resp.send_response(socket)

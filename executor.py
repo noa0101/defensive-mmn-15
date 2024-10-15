@@ -1,3 +1,8 @@
+'''
+This file contains the functions that execute the client's requests and sends an appropriate response.
+They also manage the SQLite databases, updating it and using its information for the execution of requests.
+'''
+
 import sqlite3
 import os
 from datetime import datetime
@@ -9,14 +14,13 @@ from response_handler import Response
 import tempfile
 from cksum import get_crc
 
-DEFAULT_VERSION = 3
-
 
 class Executor:
     CLIENT_ID_SIZE = 16
     NAME_LEN = 255
     PUBLIC_KEY_SIZE = 160
-    AES_KEY_SIZE = 256
+    AES_KEY_SIZE = 32
+    DEFAULT_VERSION = 3
 
     FUNCTIONS_DICT = {
         Request_Parser.REGISTRATION: "register",
@@ -28,6 +32,7 @@ class Executor:
         Request_Parser.FOURTH_INVALID_CRC: "abort"
     }
 
+    # init initializes the database name and creates it if it doesn't exist already.
     def __init__(self):
         self.db_file = 'defensive.db'
         first_run = not os.path.exists(self.db_file)
@@ -39,52 +44,50 @@ class Executor:
         else:
             print("------------loading existing database-------------------")
 
+    # creates the SQLite database with clients and files tables
     def create_database(self):
-        connection = self.connect_to_db()
+        connection = sqlite3.connect(self.db_file)
         cursor = connection.cursor()
-        create_tables_command = """
-            CREATE TABLE clients (
-                ID BLOB PRIMARY KEY,
-                Name CHAR(255),
-                PublicKey CHAR(160),
-                LastSeen DATETIME,
-                AES_Key CHAR(256)
-            );
+        create_tables_command = f"""
+                CREATE TABLE clients (
+                    ID BLOB PRIMARY KEY,
+                    Name CHAR({self.NAME_LEN}),
+                    PublicKey CHAR({self.PUBLIC_KEY_SIZE}),
+                    LastSeen DATETIME,
+                    AES_Key CHAR({self.AES_KEY_SIZE})  -- AES key in bytes
+                );
 
-            CREATE TABLE files (
-                ID CHAR(16),
-                FileName CHAR(255),
-                PathName CHAR(255) PRIMARY KEY,
-                Verified CHAR(1)
-            );
-            
-            -- Indexes for performance optimization
-            CREATE INDEX idx_client_name ON clients(Name);  -- Index on Name in clients
-            CREATE INDEX idx_files_pathname ON files(PathName);  -- Index on PathName in files
-        """
+                CREATE TABLE files (
+                    ID CHAR({self.CLIENT_ID_SIZE}),
+                    FileName CHAR({self.NAME_LEN}),
+                    PathName CHAR({self.NAME_LEN}) PRIMARY KEY,
+                    Verified CHAR(1)
+                );
+
+                -- Indexes for performance optimization
+                CREATE INDEX idx_client_name ON clients(ID);
+                CREATE INDEX idx_files_pathname ON files(PathName);
+            """
+
         cursor.executescript(create_tables_command)
         connection.commit()
         connection.close()
 
-    def connect_to_db(self):
-        return sqlite3.connect(self.db_file)
-
+    # method to execute the given request
     def execute(self, request):
-        connection = self.connect_to_db()  # Create a new connection
+        connection = sqlite3.connect(self.db_file)  # create a new connection
         cursor = connection.cursor()
+        print("--------------------------------------------------")
 
         try:
-            if request.code in Request_Parser.codes:
+            if request.code in Request_Parser.codes:  # valid request code
                 print(f"Client made a request with code {request.code}: {Request_Parser.codes[request.code]}.")
-            else:
-                print(f"Client made a request with an invalid code: {request.code}.")
-            print("--------------------------------------------------")
+                func_name = self.FUNCTIONS_DICT.get(request.code)
+                getattr(self, func_name)(request, cursor)  # call the corresponding function to execute the request
 
-            func_name = self.FUNCTIONS_DICT.get(request.code)
-            if not func_name:
+            else:  # invalid request code
+                print(f"Client made a request with an invalid code: {request.code}.")
                 Response.send_general_error(request.sock)
-            else:
-                getattr(self, func_name)(request, cursor)
 
             self.update_last_seen(request.client_id, cursor)
             connection.commit()  # Commit changes
@@ -98,34 +101,38 @@ class Executor:
             Response.send_general_error(request.sock)
 
         finally:
-            connection.close()
+            connection.close()  # close the SQLite connection
             print("--------------------------------------------------\n")
 
-
+    # updates the last seen parameter in the database, if the client exists.
     @staticmethod
     def update_last_seen(client_id, cursor):
-        if(Executor.client_exists(client_id, cursor)):
+        if Executor.client_exists(client_id, cursor):
             current_time = datetime.now()
             cursor.execute("""UPDATE clients SET LastSeen = ? WHERE ID = ?""", (current_time, client_id))
+            # no need to commit the changes as the commit occurs in execute() right after the update
 
+    # returns true if a client with the given uuid exists in the database, false otherwise.
     @staticmethod
     def client_exists(client_id, cursor):
         cursor.execute("SELECT 1 FROM clients WHERE ID = ?", (client_id,))
         result = cursor.fetchone()
         return result is not None
 
+    # method to handle a registration request
     @staticmethod
     def register(request, cursor):
         try:
-            user_id = uuid.uuid4().bytes  # create new random user id
+            user_id = uuid.uuid4().bytes  # create new random user id, get its representation as a byte object
             cursor.execute(
                 'INSERT INTO clients (ID, Name, PublicKey, AES_Key) VALUES (?, ?, ?, ?)',
                 (user_id, request.body.name, None, None))
-            resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_REGISTRATION, Response.Response_Body(user_id))
-        except Exception as e:
-            resp = Response(DEFAULT_VERSION, Response.REGISTRATION_FAILED, Response.Response_Body())
+            resp = Response(Executor.DEFAULT_VERSION, Response.SUCCESSFUL_REGISTRATION, Response.Response_Body(user_id))
+        except Exception as e:  # in case of exception send response with code "REGISTRATION FAILED".
+            resp = Response(Executor.DEFAULT_VERSION, Response.REGISTRATION_FAILED, Response.Response_Body())
         resp.send_response(request.sock)
 
+    # method to handle a request that sends a public key
     @staticmethod
     def get_public_key(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
@@ -138,35 +145,37 @@ class Executor:
                        (public_key, aes_key, request.client_id))
 
         encrypted_aes_key = encryption_utils.RSA_encryption(aes_key, public_key)
-        resp = Response(DEFAULT_VERSION, Response.PUBLIC_KEY_RECEIVED,
+        resp = Response(Executor.DEFAULT_VERSION, Response.PUBLIC_KEY_RECEIVED,
                         Response.Send_Key_Response_Body(request.client_id, encrypted_aes_key))
         resp.send_response(request.sock)
 
     @staticmethod
     def reconnect(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
-            resp = Response(DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
+            resp = Response(Executor.DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
 
         else:
             cursor.execute("SELECT PublicKey FROM clients WHERE ID = ?", (request.client_id,))
             public_rsa_key = cursor.fetchone()[0]
 
-            if public_rsa_key is None:
-                resp = Response(DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
+            if public_rsa_key is None:  # public key has not been sent by this user, request registration
+                resp = Response(Executor.DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
 
             else:
                 aes_key = encryption_utils.generate_AES_key()
                 cursor.execute("""UPDATE clients SET AES_Key = ? WHERE ID = ?""", (aes_key, request.client_id))
 
-                resp = Response(DEFAULT_VERSION, Response.SUCCESSFUL_RECONNECTION,
+                resp = Response(Executor.DEFAULT_VERSION, Response.SUCCESSFUL_RECONNECTION,
                             Response.Send_Key_Response_Body(request.client_id,
                                                              encryption_utils.RSA_encryption(aes_key, public_rsa_key)))
         resp.send_response(request.sock)
 
+    # when receiving a file, before being authenticated,it is saved in a temporary folder in this path
     @staticmethod
     def get_temp_file_path(id, filename):
         return os.path.join(tempfile.gettempdir(), "backup_server", id.hex(), filename)
 
+    # method to receive all packets of a file - the server expects them one after another and in order
     @staticmethod
     def get_file(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
@@ -207,36 +216,27 @@ class Executor:
                     request.read_request()
 
         # add file to files table (or replace an existing line with the new one)
-        print("inserting into files table")
         cursor.execute(
             'INSERT OR REPLACE INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
             (request.client_id, request.body.filename, str(temp_file), 0))
 
         # send appropriate response
         cksum, file_size = get_crc(temp_file)
-        resp = Response(DEFAULT_VERSION, Response.FILE_RECEIVED,
+        resp = Response(Executor.DEFAULT_VERSION, Response.FILE_RECEIVED,
                         Response.Send_File_Response_Body(request.client_id,
                                                          file_size, request.body.filename, cksum))
         resp.send_response(request.sock)
 
+    # method to validate a file's CRC -
     @staticmethod
     def validate_crc(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
 
-        cursor.execute("SELECT Verified FROM files WHERE FileName = ?", (request.body.name,))
-        validated_row = cursor.fetchone()
-
-        # the file is not found in the database
-        if validated_row is None:
+        source_file = Executor.get_temp_file_path(request.client_id, request.body.name)
+        if not os.path.exists(source_file):
             raise Exception("File does not exist in database.")
 
-        validated = validated_row[0]
-
-        if validated == 1:  # if file has already been validated
-            raise Exception("file has already been validated.")
-
-        source_file = Executor.get_temp_file_path(request.client_id, request.body.name)
         destination_folder = os.path.join("c:\\backup_server", request.client_id.hex())
 
         # Ensure the destination directory exists
@@ -253,13 +253,23 @@ class Executor:
             'INSERT OR REPLACE INTO files (ID, FileName, PathName, Verified) VALUES (?, ?, ?, ?)',
             (request.client_id, request.body.name, str(destination_file), 1))
 
-        resp = Response(DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
+        resp = Response(Executor.DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
         resp.send_response(request.sock)
 
+    # CRC isn't valid - erase the file and wait for the client to try again
     @staticmethod
     def invalidate_crc(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
             raise Exception("Client does not exist in database.")
+
+        file_path = Executor.get_temp_file_path(request.client_id, request.body.name)
+        if not os.path.exists(file_path):
+            raise Exception("File does not exist in backup.")
+
+        os.remove(file_path)  # remove the file, as it will be recreated when the client tries to send it again
+        # no response for this request
+
+    # CRC isn't valid for the fourth time - erase the file and stop waiting for the client to try again
     @staticmethod
     def abort(request, cursor):
         if not Executor.client_exists(request.client_id, cursor):
@@ -271,5 +281,5 @@ class Executor:
 
         os.remove(file_path)
         cursor.execute("DELETE FROM files WHERE PathName = ?", (file_path,))
-        resp = Response(DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
+        resp = Response(Executor.DEFAULT_VERSION, Response.MESSAGE_RECEIVED, Response.Response_Body())
         resp.send_response(request.sock)

@@ -1,3 +1,9 @@
+/*
+* This file contains functions that ease the use of the protocol by the client.
+* It contains functions that send the client's requests to the server according to the protocol,
+* read the server's response and returns to the client the needed information from them.
+*/
+
 #include "client.h"
 
 //returns cksum returned by the server, or a default value of 0 if the server returned with error
@@ -32,35 +38,25 @@ unsigned long Protocol_Wrapper::make_send_file_request(std::shared_ptr<tcp::sock
     return resp.get_cksum();
 }
 
-//send public key and gets server response, returns the decrypted aes key if all went well of nullptr if server responded with error
+//send public key and gets server response, returns the decrypted aes key if all went well or "" if server responded with error
 std::string Protocol_Wrapper::make_send_key_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& name, std::string& key) {
-    try {
-        Request::send_key_request(socket, id, ver, name, key);
-        Response resp = Response(socket);
-        resp.print_response_code();
-        if (resp.get_code() == Response::PUBLIC_KEY_RECEIVED)
-            return Encryption_Utils::decrypt_AES_key(resp.get_aes_key());
-        else
-            return "";
-    }
-    catch (std::exception& e) {
-        throw std::runtime_error("Connection has been cut off.");
-    }
+    Request::send_key_request(socket, id, ver, name, key);
+    Response resp = Response(socket);
+    resp.print_response_code();
+    if (resp.get_code() == Response::PUBLIC_KEY_RECEIVED)
+        return Encryption_Utils::decrypt_AES_key(resp.get_aes_key());
+    else
+        return "";
 }
 
-//returns the response of the server or nullptr if there is non
+//returns the response of the server or nullptr if no response is expected
 std::shared_ptr<Response> Protocol_Wrapper::make_general_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, uint16_t code, std::string& name) {
     Request::general_request(socket, id, ver, code, name);
     if (code == Request::INVALID_CRC)
         return nullptr;
     else {
-        try {
-            auto response = std::make_shared<Response>(socket);
-            response->print_response_code();
-            return response;
-        }
-        catch (std::exception& e) {
-            throw std::runtime_error("Connection has been cut off.");
-        }
+        auto response = std::make_shared<Response>(socket);
+        response->print_response_code();
+        return response;
     }
 }

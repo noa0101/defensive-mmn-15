@@ -1,8 +1,7 @@
 """
-This module implements the cksum command found in most UNIXes in pure
-python.
-
-The constants and routine are cribbed from the POSIX man page
+This module is taken from the course website, with moderate modifications.
+It implements the cksum command found in most UNIXes in pure python.
+The constants and routine are cribbed from the POSIX man page.
 """
 import sys
 
@@ -61,6 +60,7 @@ crctab = [ 0x00000000, 0x04c11db7, 0x09823b6e, 0x0d4326d9, 0x130476dc,
 
 UNSIGNED = lambda n: n & 0xffffffff
 
+# calculates the crc of string b
 def memcrc(b):
     n = len(b)
     i = c = s = 0
@@ -75,6 +75,7 @@ def memcrc(b):
     return UNSIGNED(~s)
 
 
+# reads file into buffer and returns it's CRC and size
 def get_crc(fname):
     try:
         buffer = open(fname, 'rb').read()

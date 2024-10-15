@@ -1,9 +1,14 @@
-#include "client.h"
+/*
+* This file is taken from the course website, with moderate modefications.
+* It contains the information and function needed ro calculate the CRC of the content of a file.
+*/
+
+#include "encryption.h"
 #include <iostream>
 #include <cstdio>
 #include <vector>
 #include <iterator>
-#include <string>
+#include <filesystem>
 
 
 uint_fast32_t const crctab[8][256] = {
@@ -443,6 +448,7 @@ uint_fast32_t const crctab[8][256] = {
 
 #define UNSIGNED(n) (n & 0xffffffff)
 
+//calculates the CRC of string b of length n
 unsigned long Cksum::memcrc(char* b, size_t n) {
     unsigned int v = 0, c = 0;
     unsigned long s = 0;
@@ -461,6 +467,7 @@ unsigned long Cksum::memcrc(char* b, size_t n) {
     return (unsigned long)UNSIGNED(~s);
 }
 
+//reads file into a buffer, calls the function to calculate its CRC and returns that result.
 unsigned long Cksum::get_cksum(std::string &fname) {
     if (std::filesystem::exists(fname)) {
         std::filesystem::path fpath = fname;
