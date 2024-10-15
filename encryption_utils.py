@@ -33,4 +33,4 @@ def decrypt_aes(ciphertext, aes_key, iv=b'\x00' * 16):
     # Unpad the decrypted data (if padding was used during encryption)
     plaintext = unpad(decrypted_data, AES.block_size)
 
-    return plaintext.decode('utf-8')
+    return plaintext

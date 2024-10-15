@@ -19,7 +19,7 @@ namespace Encryption_Utils {
 	std::string generate_RSA_keyPair();
 	CryptoPP::RSA::PrivateKey load_private_key(const std::string& filename);
 	std::string decrypt_AES_key(const std::string& encryptedKey);
-	std::shared_ptr<std::string> AES_encryption(char* plaintext, std::string& key);
+	std::shared_ptr<std::string> AES_encryption(char* plaintext, size_t length, std::string& key);
 	std::string get_encoded_privkey();
 }
 

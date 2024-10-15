@@ -199,7 +199,7 @@ class Executor:
         temp_file = Executor.get_temp_file_path(client_id, filename)
 
         # if file with that path already exists, we will write over it (only the client can overwrite their own files)
-        with open(temp_file, 'w') as file:
+        with open(temp_file, 'wb') as file:  # open the file in binary mode
             for packet_num in range(total_packs):
                 # check packet compatability
                 if request.code != Request_Parser.SEND_FILE or request.body.filename != filename or request.body.total_packs != total_packs or request.body.orig_size != org_file_size or request.body.packet_num != packet_num+1:

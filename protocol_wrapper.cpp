@@ -8,7 +8,7 @@
 
 //returns cksum returned by the server, or a default value of 0 if the server returned with error
 unsigned long Protocol_Wrapper::make_send_file_request(std::shared_ptr<tcp::socket>& socket, unsigned char id[], uint8_t ver, std::string& file_name, std::string &aes_key) {
-    std::ifstream file(file_name);
+    std::ifstream file(file_name, std::ios::binary); // Open file in binary mode
     if (!file.is_open())
         throw std::runtime_error("Error opening file to send: " + file_name + '.');
 
@@ -16,19 +16,15 @@ unsigned long Protocol_Wrapper::make_send_file_request(std::shared_ptr<tcp::sock
     size_t file_size = file.tellg(); // Get the size of the file
     file.seekg(0, std::ios::beg); // Move the file pointer back to the beginning
     
-    char* buffer = new char[Request::MAX_FILE_SENT_SIZE + 1]; // +1 for null terminator
+    char* buffer = new char[Request::MAX_FILE_SENT_SIZE];
     uint16_t tot_packs = ceil((double)file_size / Request::MAX_FILE_SENT_SIZE);
-    uint16_t packet_num;
  
-    packet_num = 1;
-    while (packet_num <= tot_packs) {
+    for (uint16_t packet_num = 1; packet_num <= tot_packs; packet_num++) {
         file.read(buffer, Request::MAX_FILE_SENT_SIZE);
         std::streamsize bytesRead = file.gcount(); // Get the number of bytes actually read
-        buffer[bytesRead] = '\0'; // Null terminate the buffer
 
-        auto ciphertext = Encryption_Utils::AES_encryption(buffer, aes_key);
+        auto ciphertext = Encryption_Utils::AES_encryption(buffer, bytesRead, aes_key);
         Request::send_file_request(socket, id, ver, ciphertext->size(), file_size, packet_num, tot_packs, file_name, ciphertext);
-        packet_num++;
     }
 
     Response resp(socket);

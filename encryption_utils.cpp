@@ -65,9 +65,9 @@ std::string Encryption_Utils::decrypt_AES_key(const std::string& encryptedKey) {
     return decryptedAESKey;
 }
 
-// receivs a string (assumes null terminated) and an AES key and returns its encryption.
+// receivs a string, it's length and an AES key and returns its encryption.
 // works on the heap to allow for relatively long texts.
-std::shared_ptr<std::string> Encryption_Utils::AES_encryption(char* plaintext, std::string& key) {
+std::shared_ptr<std::string> Encryption_Utils::AES_encryption(char* plaintext,size_t length, std::string& key) {
     CryptoPP::byte iv[CryptoPP::AES::BLOCKSIZE] = { 0 };
     CryptoPP::SecByteBlock keyBlock(reinterpret_cast<const CryptoPP::byte*>(key.data()), key.size());
 
@@ -77,10 +77,16 @@ std::shared_ptr<std::string> Encryption_Utils::AES_encryption(char* plaintext, s
     try {
         CryptoPP::CBC_Mode<CryptoPP::AES>::Encryption encryptor;
         encryptor.SetKeyWithIV(keyBlock, keyBlock.size(), iv);
-
+        /*
         CryptoPP::StringSource ss(plaintext, true,
             new CryptoPP::StreamTransformationFilter(encryptor,
                 new CryptoPP::StringSink(*cipherText) // Write to the dereferenced unique_ptr
+            )
+        );*/
+        // Create a StringSource to handle the binary input
+        CryptoPP::ArraySource source(reinterpret_cast<const CryptoPP::byte*>(plaintext), length, true,
+            new CryptoPP::StreamTransformationFilter(encryptor,
+                new CryptoPP::StringSink(*cipherText) // Write to the dereferenced shared_ptr
             )
         );
 

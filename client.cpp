@@ -183,7 +183,6 @@ void Client::send_file() {
 
     do { // try sending file up to MAX_TRIES times.
         unsigned long server_cksum = Protocol_Wrapper::make_send_file_request(socket, uuid, VERSION, file_to_send, aes_key); // send the file
-        tries++;
 
         if (cksum == server_cksum) { //if CFC is correct
             std::cout << "File received with correct cksum. Sending validation message.\n";
@@ -202,7 +201,10 @@ void Client::send_file() {
                 std::cout << "File received with incorrect cksum.\n";
             }
         }
-    } while (!validated && tries < MAX_TRIES);
+
+        tries++;
+
+    } while (!validated && tries <= MAX_TRIES);
 }
 
 // destructor for class client - disconnects from the socket and closes it.
