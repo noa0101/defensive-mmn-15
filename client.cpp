@@ -15,8 +15,7 @@ Client::Client() : active(true) {
     }
     catch (std::exception& e) {
         active = false; //in case connection to the port has failed, stop activity.
-        //print error message in red font
-        std::cerr << "\033[1m\033[31m" << "Fatal Error!\n" << e.what() << '\n' << "Stopping Client actievity.\n" << "\033[0m" << std::endl; 
+        std::cerr << "Fatal Error!\n" << e.what() << '\n' << "Stopping Client actievity.\n";
     }
 }
 
@@ -37,7 +36,7 @@ void Client::run() {
     }
     catch (std::exception& e) {
         active = false; // in case of unhandled exception, stop client activity
-        std::cerr << "\033[1m\033[31m" << "Fatal Error!\n" << e.what() << '\n' << "Stopping Client actievity.\n" << "\033[0m" << std::endl;  //print error message in red font
+        std::cerr << "Fatal Error!\n" << e.what() << '\n' << "Stopping Client actievity.\n";
     }
 }
 

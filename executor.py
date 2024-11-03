@@ -119,16 +119,28 @@ class Executor:
         result = cursor.fetchone()
         return result is not None
 
+    # method to check that the file path is within the wanted directory, to prevent path injection
+    @staticmethod
+    def is_file_in_directory(file_path, directory):
+        # Get absolute paths
+        file_path = os.path.abspath(file_path)
+        directory = os.path.abspath(directory)
+
+        # Check if the file's directory starts with the given directory path
+        return os.path.commonpath([file_path, directory]) == directory
+
     # method to handle a registration request
     @staticmethod
     def register(request, cursor):
-        try:
+        cursor.execute("SELECT 1 FROM clients WHERE NAME = ?", (request.body.name,))
+        result = cursor.fetchone()
+        if result is None:
             user_id = uuid.uuid4().bytes  # create new random user id, get its representation as a byte object
             cursor.execute(
                 'INSERT INTO clients (ID, Name, PublicKey, AES_Key) VALUES (?, ?, ?, ?)',
                 (user_id, request.body.name, None, None))
             resp = Response(Executor.DEFAULT_VERSION, Response.SUCCESSFUL_REGISTRATION, Response.Response_Body(user_id))
-        except Exception as e:  # in case of exception send response with code "REGISTRATION FAILED".
+        else:  # in case the name already exists in the database
             resp = Response(Executor.DEFAULT_VERSION, Response.REGISTRATION_FAILED, Response.Response_Body())
         resp.send_response(request.sock)
 
@@ -159,6 +171,7 @@ class Executor:
             public_rsa_key = cursor.fetchone()[0]
 
             if public_rsa_key is None:  # public key has not been sent by this user, request registration
+                cursor.execute("DELETE FROM clients WHERE ID = ?", (request.client_id,))
                 resp = Response(Executor.DEFAULT_VERSION, Response.RECONNECTION_FAILED, Response.Response_Body(request.client_id))
 
             else:
@@ -184,7 +197,6 @@ class Executor:
         client_id = request.client_id
         filename = request.body.filename
         total_packs = request.body.total_packs
-        org_file_size = request.body.orig_size
 
         cursor.execute("SELECT AES_Key FROM clients WHERE ID = ?", (client_id,))
         aes_key = cursor.fetchone()[0]
@@ -197,12 +209,14 @@ class Executor:
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
         temp_file = Executor.get_temp_file_path(client_id, filename)
+        if not Executor.is_file_in_directory(temp_file, temp_dir):
+            raise Exception("File name is invalid.")
 
         # if file with that path already exists, we will write over it (only the client can overwrite their own files)
         with open(temp_file, 'wb') as file:  # open the file in binary mode
             for packet_num in range(total_packs):
                 # check packet compatability
-                if request.code != Request_Parser.SEND_FILE or request.body.filename != filename or request.body.total_packs != total_packs or request.body.orig_size != org_file_size or request.body.packet_num != packet_num+1:
+                if request.code != Request_Parser.SEND_FILE or request.body.filename != filename or request.body.total_packs != total_packs or request.body.packet_num != packet_num+1:
                     print("Server expected to receive packet number", packet_num+1, "for file", filename, ". Received incompatible request.")
                     Response.send_general_error(request.sock)
                     return
@@ -234,7 +248,9 @@ class Executor:
             raise Exception("Client does not exist in database.")
 
         source_file = Executor.get_temp_file_path(request.client_id, request.body.name)
-        if not os.path.exists(source_file):
+        cursor.execute("SELECT 1 FROM files WHERE PathName = ?", (source_file,))
+        result = cursor.fetchone()
+        if result is None:
             raise Exception("File does not exist in database.")
 
         destination_folder = os.path.join("c:\\backup_server", request.client_id.hex())
@@ -263,8 +279,10 @@ class Executor:
             raise Exception("Client does not exist in database.")
 
         file_path = Executor.get_temp_file_path(request.client_id, request.body.name)
-        if not os.path.exists(file_path):
-            raise Exception("File does not exist in backup.")
+        cursor.execute("SELECT 1 FROM files WHERE PathName = ?", (file_path,))
+        result = cursor.fetchone()
+        if result is None:
+            raise Exception("File does not exist in database.")
 
         os.remove(file_path)  # remove the file, as it will be recreated when the client tries to send it again
         # no response for this request
@@ -276,8 +294,10 @@ class Executor:
             raise Exception("Client does not exist in database.")
 
         file_path = Executor.get_temp_file_path(request.client_id, request.body.name)
-        if not os.path.exists(file_path):
-            raise Exception("File does not exist in backup.")
+        cursor.execute("SELECT 1 FROM files WHERE PathName = ?", (file_path,))
+        result = cursor.fetchone()
+        if result is None:
+            raise Exception("File does not exist in database.")
 
         os.remove(file_path)
         cursor.execute("DELETE FROM files WHERE PathName = ?", (file_path,))
